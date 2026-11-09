@@ -28,6 +28,7 @@ class AppController extends ChangeNotifier {
   List<Channel> _channels = const [];
   Channel? _channel;
   List<Message> _messages = const [];
+  Map<String, GuildMember> _members = const {};
   bool _busy = false;
   bool _loadingMessages = false;
   bool _sending = false;
@@ -46,6 +47,12 @@ class AppController extends ChangeNotifier {
   List<Channel> get channels => _channels;
   Channel? get channel => _channel;
   List<Message> get messages => _messages;
+  String memberName(String? userId) {
+    if (userId == null) return 'система';
+    final member = _members[userId];
+    if (member != null) return member.name;
+    return userId.length >= 8 ? userId.substring(0, 8) : userId;
+  }
   bool get busy => _busy;
   bool get loadingMessages => _loadingMessages;
   bool get sending => _sending;
@@ -127,6 +134,7 @@ class AppController extends ChangeNotifier {
     _channels = const [];
     _channel = null;
     _messages = const [];
+    _members = const {};
     _error = null;
     _gatewayStatus = GatewayStatus.disconnected;
     _stage = AppStage.loggedOut;
@@ -166,12 +174,14 @@ class AppController extends ChangeNotifier {
     _channels = const [];
     _channel = null;
     _messages = const [];
+    _members = const {};
     _error = null;
     notifyListeners();
 
     try {
       final detail = await api.guildDetail(guild.id);
       _channels = detail.channels;
+      _members = await _loadMembers(guild.id);
 
       final first = _firstOrNull(_channels.where((c) => c.isText)) ??
           _firstOrNull(_channels.where((c) => c.isVoice));
@@ -273,6 +283,7 @@ class AppController extends ChangeNotifier {
       _guilds = await api.listGuilds();
       _guild = detail.guild;
       _channels = detail.channels;
+      _members = await _loadMembers(detail.guild.id);
 
       final first = _firstOrNull(_channels.where((c) => c.isText)) ??
           _firstOrNull(_channels.where((c) => c.isVoice));
@@ -422,6 +433,16 @@ class AppController extends ChangeNotifier {
       return item;
     }
     return null;
+  }
+
+  Future<Map<String, GuildMember>> _loadMembers(String guildId) async {
+    try {
+      final list = await api.members(guildId);
+      return {for (final member in list) member.userId: member};
+    } catch (_) {
+      // Без имён лента работает, показывая префикс UUID.
+      return const {};
+    }
   }
 
   @override

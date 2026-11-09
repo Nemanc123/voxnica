@@ -142,6 +142,15 @@ class ApiClient {
     return Channel.fromJson(json!);
   }
 
+  Future<List<GuildMember>> members(String guildId) async {
+    final json = await _request('GET', '/guilds/$guildId/members');
+    final raw = json?['members'] as List<dynamic>? ?? [];
+    return raw
+        .cast<Map<String, dynamic>>()
+        .map(GuildMember.fromJson)
+        .toList();
+  }
+
   Future<List<Message>> messages(
     String channelId, {
     int before = 0,

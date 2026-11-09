@@ -209,6 +209,12 @@ func TestHTTPFlow(t *testing.T) {
 		map[string]any{"channel_id": channelID}, http.StatusCreated)
 	bob.mustDo("POST", "/api/v1/invites/"+invite["code"].(string), map[string]any{}, http.StatusOK)
 
+	// 5.1. Список участников: владелец и вступивший.
+	members := bob.mustDo("GET", "/api/v1/guilds/"+guildID+"/members", nil, http.StatusOK)
+	if got := len(members["members"].([]any)); got != 2 {
+		t.Fatalf("участников %d, ожидали 2", got)
+	}
+
 	// 6. Непрочитанные у bob.
 	unread := bob.mustDo("GET", "/api/v1/guilds/"+guildID+"/unread", nil, http.StatusOK)
 	if got := unreadForChannel(t, unread, channelID); got != 2 {
@@ -253,6 +259,7 @@ func TestHTTPFlow(t *testing.T) {
 	stranger.token = reg["access_token"].(string)
 
 	stranger.mustDo("GET", "/api/v1/guilds/"+guildID+"/unread", nil, http.StatusForbidden)
+	stranger.mustDo("GET", "/api/v1/guilds/"+guildID+"/members", nil, http.StatusForbidden)
 }
 
 func randomName(seed int64, prefix string) string {

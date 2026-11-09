@@ -50,6 +50,26 @@ class AuthSession {
           : DateTime.now().add(Duration(seconds: expiresIn)),
     );
   }
+
+  /// Формат для локального хранения. Отличается от ответа API:
+  /// там `expires_in` в секундах, здесь — абсолютное время.
+  Map<String, dynamic> toStorageJson() => {
+        'user': {
+          'id': user.id,
+          'username': user.username,
+          'display_name': user.displayName,
+        },
+        'access_token': accessToken,
+        'refresh_token': refreshToken,
+        'expires_at': expiresAt?.toUtc().toIso8601String(),
+      };
+
+  factory AuthSession.fromStorageJson(Map<String, dynamic> json) => AuthSession(
+        user: User.fromJson(json['user'] as Map<String, dynamic>),
+        accessToken: json['access_token'] as String,
+        refreshToken: json['refresh_token'] as String,
+        expiresAt: DateTime.tryParse(json['expires_at'] as String? ?? ''),
+      );
 }
 
 class Guild {
@@ -189,6 +209,35 @@ class Message {
             .cast<Map<String, dynamic>>()
             .map(Attachment.fromJson)
             .toList(),
+      );
+}
+
+class GuildMember {
+  const GuildMember({
+    required this.userId,
+    required this.username,
+    this.displayName,
+    this.nickname,
+  });
+
+  final String userId;
+  final String username;
+  final String? displayName;
+  final String? nickname;
+
+  String get name {
+    if (nickname != null && nickname!.trim().isNotEmpty) return nickname!;
+    if (displayName != null && displayName!.trim().isNotEmpty) {
+      return displayName!;
+    }
+    return username;
+  }
+
+  factory GuildMember.fromJson(Map<String, dynamic> json) => GuildMember(
+        userId: json['user_id'] as String,
+        username: json['username'] as String? ?? 'участник',
+        displayName: json['display_name'] as String?,
+        nickname: json['nickname'] as String?,
       );
 }
 

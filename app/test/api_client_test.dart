@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 import 'package:voxnica/api/api_client.dart';
+import 'package:voxnica/api/session_store.dart';
 
 Map<String, dynamic> authJson(String access, String refresh) => {
       'user': {'id': 'u1', 'username': 'alice'},
@@ -66,6 +67,7 @@ void main() {
     final api = ApiClient(
       baseUrl: 'http://example.test/api/v1',
       client: client,
+      store: SessionStore.memory(),
     );
 
     await api.login('alice', 'very-long-password');
@@ -93,6 +95,7 @@ void main() {
     final api = ApiClient(
       baseUrl: 'http://example.test/api/v1',
       client: client,
+      store: SessionStore.memory(),
     );
 
     expect(

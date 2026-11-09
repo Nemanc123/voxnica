@@ -72,6 +72,7 @@ func NewRouter(d Deps) http.Handler {
 			r.Post("/guilds", d.Guild.Create)
 			r.Get("/guilds", d.Guild.List)
 			r.Get("/guilds/{guildID}", d.Guild.Get)
+			r.Get("/guilds/{guildID}/members", d.Guild.Members)
 			r.Post("/guilds/{guildID}/channels", d.Guild.CreateChannel)
 			r.Post("/guilds/{guildID}/roles", d.Guild.CreateRole)
 			r.Put("/guilds/{guildID}/members/{userID}/roles/{roleID}", d.Guild.AssignRole)

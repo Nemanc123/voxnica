@@ -58,4 +58,21 @@ void main() {
     expect(message.attachments.single.filename, 'отчёт.pdf');
     expect(message.attachments.single.sizeLabel, '2.0 КБ');
   });
+
+  test('GuildMember берёт ник, потом display_name, потом username', () {
+    final withNickname = GuildMember.fromJson({
+      'user_id': 'u1',
+      'username': 'alice',
+      'display_name': 'Алиса',
+      'nickname': 'Лиса',
+    });
+    final withoutNickname = GuildMember.fromJson({
+      'user_id': 'u2',
+      'username': 'bob',
+      'display_name': 'Боб',
+    });
+
+    expect(withNickname.name, 'Лиса');
+    expect(withoutNickname.name, 'Боб');
+  });
 }

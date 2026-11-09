@@ -479,7 +479,11 @@ class _TextChannelState extends State<_TextChannel> {
 
                       final message =
                           messages[messages.length - 1 - index];
-                      return _MessageTile(message: message);
+                      return _MessageTile(
+                        message: message,
+                        authorName:
+                            controller.memberName(message.authorId),
+                      );
                     },
                   ),
           ),
@@ -529,9 +533,10 @@ class _TextChannelState extends State<_TextChannel> {
 }
 
 class _MessageTile extends StatelessWidget {
-  const _MessageTile({required this.message});
+  const _MessageTile({required this.message, required this.authorName});
 
   final Message message;
+  final String authorName;
 
   @override
   Widget build(BuildContext context) {
@@ -547,7 +552,9 @@ class _MessageTile extends StatelessWidget {
             radius: 18,
             backgroundColor: const Color(0xFF5865F2),
             child: Text(
-              message.authorLabel.substring(0, 1).toUpperCase(),
+              authorName.isEmpty
+                  ? '?'
+                  : authorName.substring(0, 1).toUpperCase(),
               style: const TextStyle(fontSize: 13),
             ),
           ),
@@ -559,7 +566,7 @@ class _MessageTile extends StatelessWidget {
                 Row(
                   children: [
                     Text(
-                      message.authorLabel,
+                      authorName,
                       style: const TextStyle(fontWeight: FontWeight.w700),
                     ),
                     const SizedBox(width: 8),

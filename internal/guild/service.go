@@ -116,6 +116,15 @@ func (s *Service) ListGuilds(ctx context.Context, userID string) ([]store.Guild,
 	return s.store.GuildsForUser(ctx, userID)
 }
 
+// Members отдаёт участников сервера. Смотреть может только участник:
+// список участников — не публичная информация.
+func (s *Service) Members(ctx context.Context, actorID, guildID string) ([]store.Member, error) {
+	if err := s.RequireMember(ctx, actorID, guildID); err != nil {
+		return nil, err
+	}
+	return s.store.MembersForGuild(ctx, guildID)
+}
+
 // RequireMember проверяет, что пользователь состоит в сервере.
 func (s *Service) RequireMember(ctx context.Context, userID, guildID string) error {
 	member, err := s.store.MemberExists(ctx, guildID, userID)

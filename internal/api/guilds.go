@@ -296,6 +296,40 @@ func (h *GuildHandlers) JoinByInvite(w http.ResponseWriter, r *http.Request) {
 }
 
 // mapGuildError переводит доменные ошибки в HTTP-статусы.
+type memberResponse struct {
+	UserID      string  `json:"user_id"`
+	Username    string  `json:"username"`
+	DisplayName *string `json:"display_name,omitempty"`
+	Nickname    *string `json:"nickname,omitempty"`
+	JoinedAt    string  `json:"joined_at"`
+}
+
+// Members отдаёт участников сервера. Имена нужны клиенту, чтобы
+// показывать автора сообщения, а не префикс UUID.
+func (h *GuildHandlers) Members(w http.ResponseWriter, r *http.Request) {
+	userID, _ := UserIDFrom(r.Context())
+	guildID := chi.URLParam(r, "guildID")
+
+	members, err := h.svc.Members(r.Context(), userID, guildID)
+	if err != nil {
+		mapGuildError(w, err)
+		return
+	}
+
+	out := make([]memberResponse, 0, len(members))
+	for _, m := range members {
+		out = append(out, memberResponse{
+			UserID:      m.UserID,
+			Username:    m.Username,
+			DisplayName: m.DisplayName,
+			Nickname:    m.Nickname,
+			JoinedAt:    m.JoinedAt.UTC().Format(time.RFC3339),
+		})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"members": out})
+}
+
 func mapGuildError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, guild.ErrValidation):

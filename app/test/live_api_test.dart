@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:voxnica/api/api_client.dart';
 import 'package:voxnica/api/models.dart';
+import 'package:voxnica/api/session_store.dart';
 import 'package:voxnica/gateway/gateway_client.dart';
 
 /// Живой тест клиента против настоящего сервера.
@@ -23,7 +24,10 @@ void main() {
     }
 
     final suffix = DateTime.now().microsecondsSinceEpoch;
-    final api = ApiClient(baseUrl: _base);
+    final api = ApiClient(
+      baseUrl: _base,
+      store: SessionStore.memory(),
+    );
 
     final session = await api.register(
       username: 'e2e$suffix',
@@ -34,6 +38,10 @@ void main() {
 
     final detail = await api.createGuild('Проверка клиента');
     expect(detail.channels.length, greaterThanOrEqualTo(2));
+
+    final members = await api.members(detail.guild.id);
+    expect(members, hasLength(1));
+    expect(members.single.username, startsWith('e2e'));
 
     final text = detail.channels.firstWhere((c) => c.isText);
     final voice = detail.channels.firstWhere((c) => c.isVoice);
@@ -60,7 +68,10 @@ void main() {
     }
 
     final suffix = DateTime.now().microsecondsSinceEpoch;
-    final api = ApiClient(baseUrl: _base);
+    final api = ApiClient(
+      baseUrl: _base,
+      store: SessionStore.memory(),
+    );
 
     await api.register(
       username: 'ws$suffix',

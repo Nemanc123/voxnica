@@ -107,5 +107,28 @@ jobs:
             exit 1
           fi
 
-  # Клиент появится на этапе 0.5 — тогда добавим job для Flutter:
-  # flutter analyze + flutter test на ubuntu-latest.
+  flutter:
+    name: Flutter — analyze и тесты
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.47.8"
+          channel: stable
+          cache: true
+
+      - name: Установить зависимости
+        working-directory: app
+        run: flutter pub get
+
+      - name: Анализ
+        working-directory: app
+        run: flutter analyze
+
+      - name: Тесты
+        working-directory: app
+        run: flutter test
+

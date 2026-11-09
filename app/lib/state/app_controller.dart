@@ -270,6 +270,71 @@ class AppController extends ChangeNotifier {
     }
   }
 
+  /// Загружает файл в хранилище и отправляет сообщение с вложением.
+  /// Сам файл через Go-сервер не идёт: presign → PUT в S3 → сообщение.
+  Future<bool> sendWithAttachment({
+    required String filename,
+    required String contentType,
+    required List<int> bytes,
+    String text = '',
+  }) async {
+    final channel = _channel;
+    if (channel == null || !channel.isText || _sending) return false;
+
+    if (bytes.isEmpty) {
+      _error = 'Файл пустой';
+      notifyListeners();
+      return false;
+    }
+    if (bytes.length > 25 << 20) {
+      _error = 'Файл больше 25 МиБ';
+      notifyListeners();
+      return false;
+    }
+
+    _sending = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      final presign = await api.presignAttachment(
+        channelId: channel.id,
+        filename: filename,
+        contentType: contentType,
+        sizeBytes: bytes.length,
+      );
+
+      await api.uploadAttachment(
+        presign,
+        bytes,
+        contentType: contentType,
+      );
+
+      final pending = PendingAttachment(
+        storageKey: presign.storageKey,
+        filename: filename,
+        contentType: contentType,
+        sizeBytes: bytes.length,
+      );
+
+      final message = await api.sendMessageWithAttachments(
+        channel.id,
+        text.trim(),
+        [pending],
+      );
+
+      _upsertMessage(message);
+      _markRead();
+      return true;
+    } catch (e) {
+      _error = _describe(e);
+      return false;
+    } finally {
+      _sending = false;
+      notifyListeners();
+    }
+  }
+
   Future<bool> createGuild(String name) async {
     final trimmed = name.trim();
     if (trimmed.isEmpty) return false;

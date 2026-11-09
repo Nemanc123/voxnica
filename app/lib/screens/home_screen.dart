@@ -1,3 +1,4 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../api/models.dart';
@@ -414,6 +415,7 @@ class _TextChannel extends StatefulWidget {
 class _TextChannelState extends State<_TextChannel> {
   final _input = TextEditingController();
   final _scroll = ScrollController();
+  bool _picking = false;
 
   @override
   void dispose() {
@@ -428,6 +430,54 @@ class _TextChannelState extends State<_TextChannel> {
 
     _input.clear();
     await widget.controller.sendMessage(text);
+  }
+
+  Future<void> _pickAndSend() async {
+    if (_picking || widget.controller.sending) return;
+
+    setState(() => _picking = true);
+
+    try {
+      final files = await FilePicker.pickFiles();
+      if (files.isEmpty) return;
+
+      final file = files.first;
+      final bytes = await file.readAsBytes();
+
+      final ok = await widget.controller.sendWithAttachment(
+        filename: file.name,
+        contentType: _contentTypeFor(file.name),
+        bytes: bytes,
+        text: _input.text,
+      );
+
+      if (ok) {
+        _input.clear();
+      } else if (widget.controller.error != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(widget.controller.error!)),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _picking = false);
+    }
+  }
+
+  String _contentTypeFor(String filename) {
+    final ext = filename.split('.').last.toLowerCase();
+    return switch (ext) {
+      'png' => 'image/png',
+      'jpg' || 'jpeg' => 'image/jpeg',
+      'gif' => 'image/gif',
+      'webp' => 'image/webp',
+      'pdf' => 'application/pdf',
+      'txt' => 'text/plain',
+      'json' => 'application/json',
+      'zip' => 'application/zip',
+      'mp3' => 'audio/mpeg',
+      'mp4' => 'video/mp4',
+      _ => 'application/octet-stream',
+    };
   }
 
   @override
@@ -513,6 +563,18 @@ class _TextChannelState extends State<_TextChannel> {
                   ),
                 ),
                 const SizedBox(width: 8),
+                IconButton(
+                  tooltip: 'Прикрепить файл',
+                  onPressed:
+                      (controller.sending || _picking) ? null : _pickAndSend,
+                  icon: _picking
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.attach_file),
+                ),
                 IconButton.filled(
                   onPressed: controller.sending ? null : _send,
                   icon: controller.sending

@@ -165,13 +165,62 @@ class ApiClient {
     return raw.cast<Map<String, dynamic>>().map(Message.fromJson).toList();
   }
 
-  Future<Message> sendMessage(String channelId, String content) async {
+  Future<Message> sendMessage(String channelId, String content) =>
+      sendMessageWithAttachments(channelId, content, const []);
+
+  Future<Message> sendMessageWithAttachments(
+    String channelId,
+    String content,
+    List<PendingAttachment> attachments,
+  ) async {
     final json = await _request(
       'POST',
       '/channels/$channelId/messages',
-      body: {'content': content, 'attachments': <dynamic>[]},
+      body: {
+        'content': content,
+        'attachments': attachments.map((a) => a.toJson()).toList(),
+      },
     );
     return Message.fromJson(json!);
+  }
+
+  Future<PresignResult> presignAttachment({
+    required String channelId,
+    required String filename,
+    required String contentType,
+    required int sizeBytes,
+  }) async {
+    final json = await _request(
+      'POST',
+      '/channels/$channelId/attachments/presign',
+      body: {
+        'filename': filename,
+        'content_type': contentType,
+        'size_bytes': sizeBytes,
+      },
+    );
+    return PresignResult.fromJson(json!);
+  }
+
+  /// Загрузка идёт напрямую в S3 по подписанной ссылке, минуя Go-сервер.
+  Future<void> uploadAttachment(
+    PresignResult presign,
+    List<int> bytes, {
+    required String contentType,
+  }) async {
+    final response = await _http.put(
+      Uri.parse(presign.uploadUrl),
+      headers: {'Content-Type': contentType},
+      body: bytes,
+    );
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(
+        response.statusCode,
+        'upload_failed',
+        'Хранилище не приняло файл (код ${response.statusCode})',
+      );
+    }
   }
 
   Future<void> markRead(String channelId, int seq) async {

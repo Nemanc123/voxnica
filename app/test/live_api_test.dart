@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 
@@ -51,6 +52,31 @@ void main() {
 
     final history = await api.messages(text.id);
     expect(history.any((m) => m.id == sent.id), isTrue);
+
+    final presign = await api.presignAttachment(
+      channelId: text.id,
+      filename: 'live.txt',
+      contentType: 'text/plain',
+      sizeBytes: 5,
+    );
+    await api.uploadAttachment(
+      presign,
+      utf8.encode('hello'),
+      contentType: 'text/plain',
+    );
+    final withFile = await api.sendMessageWithAttachments(
+      text.id,
+      'файл',
+      [
+        PendingAttachment(
+          storageKey: presign.storageKey,
+          filename: 'live.txt',
+          contentType: 'text/plain',
+          sizeBytes: 5,
+        ),
+      ],
+    );
+    expect(withFile.attachments.single.filename, 'live.txt');
 
     final join = await api.voiceJoin(voice.id);
     expect(join.token, isNotEmpty);

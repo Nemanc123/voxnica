@@ -165,6 +165,39 @@ class Attachment {
       );
 }
 
+class PresignResult {
+  const PresignResult({required this.storageKey, required this.uploadUrl});
+
+  final String storageKey;
+  final String uploadUrl;
+
+  factory PresignResult.fromJson(Map<String, dynamic> json) => PresignResult(
+        storageKey: json['storage_key'] as String,
+        uploadUrl: json['upload_url'] as String,
+      );
+}
+
+class PendingAttachment {
+  const PendingAttachment({
+    required this.storageKey,
+    required this.filename,
+    required this.contentType,
+    required this.sizeBytes,
+  });
+
+  final String storageKey;
+  final String filename;
+  final String contentType;
+  final int sizeBytes;
+
+  Map<String, dynamic> toJson() => {
+        'storage_key': storageKey,
+        'filename': filename,
+        'content_type': contentType,
+        'size_bytes': sizeBytes,
+      };
+}
+
 class Message {
   const Message({
     required this.id,

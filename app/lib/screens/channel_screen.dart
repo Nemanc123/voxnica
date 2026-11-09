@@ -23,7 +23,10 @@ class ChannelScreen extends StatelessWidget {
           onPressed: () => Navigator.of(context).pop(),
         ),
       ),
-      body: ChannelPane(controller: controller),
+      body: ListenableBuilder(
+        listenable: controller,
+        builder: (context, _) => ChannelPane(controller: controller),
+      ),
     );
   }
 }

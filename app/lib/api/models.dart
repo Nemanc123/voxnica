@@ -301,12 +301,14 @@ class VoiceParticipant {
     required this.username,
     this.displayName,
     required this.selfMute,
+    required this.selfDeaf,
   });
 
   final String userId;
   final String username;
   final String? displayName;
   final bool selfMute;
+  final bool selfDeaf;
 
   String get name =>
       (displayName != null && displayName!.trim().isNotEmpty)
@@ -319,5 +321,6 @@ class VoiceParticipant {
         username: json['username'] as String? ?? 'участник',
         displayName: json['display_name'] as String?,
         selfMute: json['self_mute'] as bool? ?? false,
+        selfDeaf: json['self_deaf'] as bool? ?? false,
       );
 }

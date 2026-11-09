@@ -249,6 +249,18 @@ class ApiClient {
         .toList();
   }
 
+  Future<void> voiceState(
+    String channelId, {
+    required bool selfMute,
+    required bool selfDeaf,
+  }) async {
+    await _request(
+      'PATCH',
+      '/channels/$channelId/voice/state',
+      body: {'self_mute': selfMute, 'self_deaf': selfDeaf},
+    );
+  }
+
   /// Прямая ссылка на скачивание. Требует заголовок Authorization,
   /// поэтому открывать её в браузере без токена нельзя.
   String attachmentUrl(String attachmentId) =>

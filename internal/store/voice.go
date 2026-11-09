@@ -86,6 +86,36 @@ func (s *Store) CloseVoiceChannel(ctx context.Context, channelID string) error {
 	return nil
 }
 
+// SetVoiceState обновляет микрофон и звук живой сессии.
+func (s *Store) SetVoiceState(ctx context.Context, channelID, userID string, mute, deaf bool) error {
+	const query = `
+		UPDATE voice_sessions
+		   SET self_mute = $3, self_deaf = $4
+		 WHERE channel_id = $1::uuid
+		   AND user_id = $2::uuid
+		   AND left_at IS NULL`
+
+	if _, err := s.db.Exec(ctx, query, channelID, userID, mute, deaf); err != nil {
+		return fmt.Errorf("обновление голосового состояния: %w", err)
+	}
+	return nil
+}
+
+// SetVoiceMuted меняет только микрофон: вебхук трека не знает про deaf.
+func (s *Store) SetVoiceMuted(ctx context.Context, channelID, userID string, muted bool) error {
+	const query = `
+		UPDATE voice_sessions
+		   SET self_mute = $3
+		 WHERE channel_id = $1::uuid
+		   AND user_id = $2::uuid
+		   AND left_at IS NULL`
+
+	if _, err := s.db.Exec(ctx, query, channelID, userID, muted); err != nil {
+		return fmt.Errorf("обновление mute: %w", err)
+	}
+	return nil
+}
+
 // VoiceParticipants — кто сейчас в канале, в порядке входа.
 func (s *Store) VoiceParticipants(ctx context.Context, channelID string) ([]VoiceParticipant, error) {
 	const query = `

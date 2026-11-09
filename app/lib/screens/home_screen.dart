@@ -748,7 +748,8 @@ class _VoicePanel extends StatelessWidget {
                         const SizedBox(height: 8),
                         Text(
                           inThisChannel
-                              ? 'Микрофон ${voice.micEnabled ? 'включён' : 'выключен'}'
+                              ? 'Микрофон ${voice.micEnabled ? 'включён' : 'выключен'}, '
+                                  'звук ${voice.deafened ? 'выключен' : 'включён'}'
                               : 'Нажмите, чтобы войти. Микрофон включится сразу.',
                           style: const TextStyle(color: kTextMuted),
                           textAlign: TextAlign.center,
@@ -779,8 +780,10 @@ class _VoicePanel extends StatelessWidget {
                             label: const Text('Подключиться'),
                           )
                         else
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
+                          Wrap(
+                            alignment: WrapAlignment.center,
+                            spacing: 12,
+                            runSpacing: 8,
                             children: [
                               FilledButton.icon(
                                 onPressed: voice.toggleMicrophone,
@@ -793,7 +796,19 @@ class _VoicePanel extends StatelessWidget {
                                       : 'Включить микрофон',
                                 ),
                               ),
-                              const SizedBox(width: 12),
+                              OutlinedButton.icon(
+                                onPressed: voice.toggleDeafen,
+                                icon: Icon(
+                                  voice.deafened
+                                      ? Icons.volume_off
+                                      : Icons.volume_up,
+                                ),
+                                label: Text(
+                                  voice.deafened
+                                      ? 'Включить звук'
+                                      : 'Оглушить',
+                                ),
+                              ),
                               OutlinedButton.icon(
                                 onPressed: controller.leaveVoice,
                                 icon: const Icon(Icons.call_end),
@@ -827,6 +842,12 @@ class _VoicePanel extends StatelessWidget {
                                     in voice.participants)
                                   ListTile(
                                     dense: true,
+                                    tileColor: voice.isSpeaking(participant.userId)
+                                        ? kAccent.withValues(alpha: 0.22)
+                                        : null,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
                                     leading: CircleAvatar(
                                       radius: 14,
                                       backgroundColor: kAccent,
@@ -838,12 +859,35 @@ class _VoicePanel extends StatelessWidget {
                                       ),
                                     ),
                                     title: Text(participant.name),
-                                    trailing: Icon(
-                                      participant.selfMute
-                                          ? Icons.mic_off
-                                          : Icons.mic,
-                                      size: 16,
-                                      color: kTextMuted,
+                                    trailing: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        if (voice.isSpeaking(participant.userId))
+                                          const Padding(
+                                            padding: EdgeInsets.only(right: 6),
+                                            child: Icon(
+                                              Icons.graphic_eq,
+                                              size: 16,
+                                              color: kOnline,
+                                            ),
+                                          ),
+                                        Icon(
+                                          participant.selfMute
+                                              ? Icons.mic_off
+                                              : Icons.mic,
+                                          size: 16,
+                                          color: kTextMuted,
+                                        ),
+                                        if (participant.selfDeaf)
+                                          const Padding(
+                                            padding: EdgeInsets.only(left: 4),
+                                            child: Icon(
+                                              Icons.volume_off,
+                                              size: 16,
+                                              color: kTextMuted,
+                                            ),
+                                          ),
+                                      ],
                                     ),
                                   ),
                               ],

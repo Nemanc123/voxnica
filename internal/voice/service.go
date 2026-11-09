@@ -89,6 +89,35 @@ func (s *Service) Join(ctx context.Context, userID, channelID string) (JoinResul
 	}, nil
 }
 
+// SetState обновляет mute/deaf текущего пользователя. Клиент зовёт это
+// при переключении микрофона и звука; вебхук трека дублирует mute.
+func (s *Service) SetState(ctx context.Context, userID, channelID string, selfMute, selfDeaf bool) error {
+	channel, _, err := s.authorize(ctx, userID, channelID, perms.ViewChannel|perms.Connect)
+	if err != nil {
+		return err
+	}
+	if channel.Type != "voice" {
+		return fmt.Errorf("%w: это не голосовой канал", ErrValidation)
+	}
+
+	if err := s.store.SetVoiceState(ctx, channelID, userID, selfMute, selfDeaf); err != nil {
+		return err
+	}
+
+	s.publish(ctx, channel.GuildID, Event{
+		Type:      "VOICE_STATE_UPDATE",
+		ChannelID: channelID,
+		Data: map[string]any{
+			"channel_id": channelID,
+			"user_id":    userID,
+			"joined":     true,
+			"self_mute":  selfMute,
+			"self_deaf":  selfDeaf,
+		},
+	})
+	return nil
+}
+
 // Participants — кто сейчас в канале. Нужен клиенту, который только
 // открыл канал и ещё не подключился к комнате.
 func (s *Service) Participants(ctx context.Context, userID, channelID string) ([]store.VoiceParticipant, error) {
@@ -119,6 +148,16 @@ func (s *Service) HandleWebhook(ctx context.Context, rawToken string, body []byt
 	case "room_finished":
 		slog.Info("livekit webhook", "event", event.Event, "room", event.Room.Name)
 		return s.roomFinished(ctx, event.Room.Name)
+	case "track_muted", "track_unmuted":
+		if event.Track.Type != "AUDIO" {
+			return nil // видео и экран появятся на этапе 6
+		}
+		return s.trackMuted(
+			ctx,
+			event.Room.Name,
+			event.Participant.Identity,
+			event.Event == "track_muted",
+		)
 	default:
 		// track_published, room_started и прочее нам пока не нужны.
 		return nil
@@ -174,6 +213,34 @@ func (s *Service) participantLeft(ctx context.Context, channelID, userID string)
 			"channel_id": channelID,
 			"user_id":    userID,
 			"joined":     false,
+		},
+	})
+	return nil
+}
+
+// trackMuted применяет вебхук микрофона. self_deaf не трогаем:
+// LiveKit про него не знает, его присылает клиент через SetState.
+func (s *Service) trackMuted(ctx context.Context, channelID, userID string, muted bool) error {
+	channel, err := s.voiceChannel(ctx, channelID)
+	if err != nil {
+		return err
+	}
+	if channel == nil {
+		return nil
+	}
+
+	if err := s.store.SetVoiceMuted(ctx, channelID, userID, muted); err != nil {
+		return err
+	}
+
+	s.publish(ctx, channel.GuildID, Event{
+		Type:      "VOICE_STATE_UPDATE",
+		ChannelID: channelID,
+		Data: map[string]any{
+			"channel_id": channelID,
+			"user_id":    userID,
+			"joined":     true,
+			"self_mute":  muted,
 		},
 	})
 	return nil

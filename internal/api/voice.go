@@ -39,6 +39,30 @@ func (h *VoiceHandlers) Join(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
+type voiceStateRequest struct {
+	SelfMute bool `json:"self_mute"`
+	SelfDeaf bool `json:"self_deaf"`
+}
+
+// SetState сохраняет mute/deaf текущего пользователя в voice_sessions.
+func (h *VoiceHandlers) SetState(w http.ResponseWriter, r *http.Request) {
+	userID, _ := UserIDFrom(r.Context())
+	channelID := chi.URLParam(r, "channelID")
+
+	var req voiceStateRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "тело запроса должно быть JSON-объектом")
+		return
+	}
+
+	if err := h.svc.SetState(r.Context(), userID, channelID, req.SelfMute, req.SelfDeaf); err != nil {
+		mapVoiceError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // Participants — кто сейчас сидит в канале.
 func (h *VoiceHandlers) Participants(w http.ResponseWriter, r *http.Request) {
 	userID, _ := UserIDFrom(r.Context())

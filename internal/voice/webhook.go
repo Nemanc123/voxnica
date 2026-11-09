@@ -26,6 +26,10 @@ type WebhookEvent struct {
 		Identity string `json:"identity"`
 		Name     string `json:"name"`
 	} `json:"participant"`
+	Track struct {
+		Type  string `json:"type"`
+		Muted bool   `json:"muted"`
+	} `json:"track"`
 }
 
 // VerifyWebhook проверяет подпись уведомления LiveKit.

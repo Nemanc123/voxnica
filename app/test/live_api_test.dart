@@ -83,6 +83,8 @@ void main() {
     expect(join.room, voice.id);
     expect(join.canPublish, isTrue);
 
+    await api.voiceState(voice.id, selfMute: true, selfDeaf: true);
+
     final participants = await api.voiceParticipants(voice.id);
     expect(participants, isEmpty);
   });

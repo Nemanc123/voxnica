@@ -295,6 +295,90 @@ func TestWebhookMovesBetweenChannels(t *testing.T) {
 	}
 }
 
+func TestSetVoiceState(t *testing.T) {
+	e := newVoiceEnv(t)
+	ctx := context.Background()
+
+	join := webhookJSON(t, "participant_joined", e.voiceID, e.owner)
+	if err := e.service.HandleWebhook(ctx, signWebhook(t, "devkey", "secret", join), join); err != nil {
+		t.Fatalf("вход: %v", err)
+	}
+
+	if err := e.service.SetState(ctx, e.owner, e.voiceID, true, true); err != nil {
+		t.Fatalf("состояние: %v", err)
+	}
+
+	participants, err := e.store.VoiceParticipants(ctx, e.voiceID)
+	if err != nil {
+		t.Fatalf("участники: %v", err)
+	}
+	if !participants[0].SelfMute || !participants[0].SelfDeaf {
+		t.Fatalf("ожидали mute+deaf, получили %+v", participants[0])
+	}
+
+	if err := e.service.SetState(ctx, e.owner, e.voiceID, false, false); err != nil {
+		t.Fatalf("снятие состояния: %v", err)
+	}
+
+	participants, _ = e.store.VoiceParticipants(ctx, e.voiceID)
+	if participants[0].SelfMute || participants[0].SelfDeaf {
+		t.Fatalf("ожидали снятое состояние, получили %+v", participants[0])
+	}
+}
+
+func TestWebhookTrackMuted(t *testing.T) {
+	e := newVoiceEnv(t)
+	ctx := context.Background()
+
+	join := webhookJSON(t, "participant_joined", e.voiceID, e.owner)
+	if err := e.service.HandleWebhook(ctx, signWebhook(t, "devkey", "secret", join), join); err != nil {
+		t.Fatalf("вход: %v", err)
+	}
+
+	muted := trackWebhookJSON(t, "track_muted", e.voiceID, e.owner, true)
+	if err := e.service.HandleWebhook(ctx, signWebhook(t, "devkey", "secret", muted), muted); err != nil {
+		t.Fatalf("mute: %v", err)
+	}
+
+	participants, _ := e.store.VoiceParticipants(ctx, e.voiceID)
+	if !participants[0].SelfMute {
+		t.Fatalf("ожидали mute, получили %+v", participants[0])
+	}
+
+	unmuted := trackWebhookJSON(t, "track_unmuted", e.voiceID, e.owner, false)
+	if err := e.service.HandleWebhook(ctx, signWebhook(t, "devkey", "secret", unmuted), unmuted); err != nil {
+		t.Fatalf("unmute: %v", err)
+	}
+
+	participants, _ = e.store.VoiceParticipants(ctx, e.voiceID)
+	if participants[0].SelfMute {
+		t.Fatalf("ожидали снятый mute, получили %+v", participants[0])
+	}
+}
+
+func trackWebhookJSON(t *testing.T, event, channelID, userID string, muted bool) []byte {
+	t.Helper()
+
+	payload := map[string]any{
+		"event": event,
+		"room":  map[string]any{"name": channelID, "sid": "RM_test"},
+		"participant": map[string]any{
+			"identity": userID,
+			"name":     "test",
+		},
+		"track": map[string]any{
+			"type":  "AUDIO",
+			"muted": muted,
+		},
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("тело вебхука: %v", err)
+	}
+	return body
+}
+
 func TestWebhookRoomFinishedClearsSessions(t *testing.T) {
 	e := newVoiceEnv(t)
 	ctx := context.Background()

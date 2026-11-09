@@ -540,6 +540,20 @@ func TestHTTPVoice(t *testing.T) {
 		t.Fatalf("не тот участник: %v", participants[0])
 	}
 
+	// 4.1. Mute и deaf сохраняются в voice_sessions.
+	alice.mustDo(
+		"PATCH",
+		"/api/v1/channels/"+voiceID+"/voice/state",
+		map[string]any{"self_mute": true, "self_deaf": true},
+		http.StatusNoContent,
+	)
+
+	list = alice.mustDo("GET", "/api/v1/channels/"+voiceID+"/voice", nil, http.StatusOK)
+	state := list["participants"].([]any)[0].(map[string]any)
+	if state["self_mute"] != true || state["self_deaf"] != true {
+		t.Fatalf("состояние не сохранилось: %v", state)
+	}
+
 	// 5. Посторонний не видит участников.
 	stranger := &client{t: t, base: srv.URL}
 	regStranger := stranger.mustDo("POST", "/api/v1/auth/register", map[string]any{

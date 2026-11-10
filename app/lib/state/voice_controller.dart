@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:livekit_client/livekit_client.dart';
 
 import '../api/api_client.dart';
@@ -27,6 +28,12 @@ class VideoTile {
 
 class VoiceController extends ChangeNotifier {
   VoiceController(this.api);
+
+  /// Канал к MainActivity: foreground service, без которого Android 14+
+  /// не разрешает захват экрана.
+  static const MethodChannel _screenShareChannel = MethodChannel(
+    'voxnica/screen_share',
+  );
 
   final ApiClient api;
 
@@ -103,13 +110,15 @@ class VoiceController extends ChangeNotifier {
       for (final publication in participant.videoTrackPublications) {
         final track = publication.track;
         if (publication.source == TrackSource.camera && track != null) {
-          out.add(VideoTile(
-            track: track,
-            name: participant.name.isEmpty
-                ? participant.identity
-                : participant.name,
-            isLocal: false,
-          ));
+          out.add(
+            VideoTile(
+              track: track,
+              name: participant.name.isEmpty
+                  ? participant.identity
+                  : participant.name,
+              isLocal: false,
+            ),
+          );
         }
       }
     }
@@ -246,17 +255,31 @@ class VoiceController extends ChangeNotifier {
     if (room == null || !_canScreenShare) return;
 
     final next = !_screenSharing;
+    final android = !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+
+    // Сервис поднимаем до запроса разрешения: Android 14+ проверяет его
+    // в момент getMediaProjection().
+    if (android && next) {
+      await _screenShareChannel.invokeMethod<void>('start');
+    }
+
     try {
       await room.localParticipant?.setScreenShareEnabled(next);
       _screenSharing = next;
       _error = null;
     } catch (e) {
+      _screenSharing = false;
       _error = 'Демонстрация экрана недоступна: $e';
+    } finally {
+      if (android && !_screenSharing) {
+        await _screenShareChannel.invokeMethod<void>('stop');
+      }
     }
     notifyListeners();
   }
 
-  Future<void> toggleDeafen() async {    final room = _room;
+  Future<void> toggleDeafen() async {
+    final room = _room;
     if (room == null) return;
 
     final next = !_deafened;
@@ -295,11 +318,7 @@ class VoiceController extends ChangeNotifier {
     if (id == null) return;
 
     try {
-      await api.voiceState(
-        id,
-        selfMute: !_micEnabled,
-        selfDeaf: _deafened,
-      );
+      await api.voiceState(id, selfMute: !_micEnabled, selfDeaf: _deafened);
     } catch (_) {
       // Состояние — не критично для самого разговора.
     }
@@ -324,6 +343,10 @@ class VoiceController extends ChangeNotifier {
     if (room != null) {
       await room.disconnect();
       await room.dispose();
+    }
+
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      await _screenShareChannel.invokeMethod<void>('stop');
     }
 
     notifyListeners();

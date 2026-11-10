@@ -4,7 +4,8 @@
 # --dev (devkey/secret), поэтому клиенты и сервер не меняются.
 #
 # Вебхуки идут на Go-сервер. Из контейнера адрес хоста — host.docker.internal;
-# compose добавляет эту запись через host-gateway.
+# compose задаёт его в extra_hosts. Когда API запущен на Windows, это шлюз WSL
+# (172.31.240.1), а не host-gateway: иначе запрос уходит в саму WSL.
 port: 7880
 
 bind_addresses:

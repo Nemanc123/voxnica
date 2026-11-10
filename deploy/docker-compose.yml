@@ -91,7 +91,10 @@ services:
     volumes:
       - ./livekit.yaml:/etc/livekit.yaml:ro
     extra_hosts:
-      - "host.docker.internal:host-gateway"
+      # Вебхуки идут в Go-API. Если API запущен на Windows, из контейнера он
+      # виден по шлюзу WSL (по умолчанию 172.31.240.1). Если API в WSL —
+      # задайте HOST_GATEWAY=host-gateway.
+      - "host.docker.internal:${HOST_GATEWAY:-172.31.240.1}"
     ports:
       - "7880:7880"      # HTTP + WebSocket (сигналинг)
       - "7881:7881"      # TCP fallback для WebRTC

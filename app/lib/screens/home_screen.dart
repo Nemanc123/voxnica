@@ -154,9 +154,7 @@ class _ChannelSidebar extends StatelessWidget {
             height: 56,
             padding: const EdgeInsets.symmetric(horizontal: 12),
             decoration: const BoxDecoration(
-              border: Border(
-                bottom: BorderSide(color: Color(0xFF1E1F22)),
-              ),
+              border: Border(bottom: BorderSide(color: Color(0xFF1E1F22))),
             ),
             child: Row(
               children: [
@@ -294,8 +292,7 @@ class _ChannelTile extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: selected ? kTextPrimary : kTextMuted,
-                      fontWeight:
-                          selected ? FontWeight.w600 : FontWeight.w400,
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
                     ),
                   ),
                 ),
@@ -388,10 +385,7 @@ class ChannelPane extends StatelessWidget {
       return const ColoredBox(
         color: kBackground,
         child: Center(
-          child: Text(
-            'Выберите канал',
-            style: TextStyle(color: kTextMuted),
-          ),
+          child: Text('Выберите канал', style: TextStyle(color: kTextMuted)),
         ),
       );
     }
@@ -456,9 +450,8 @@ class _TextChannelState extends State<_TextChannel> {
       if (ok) {
         _input.clear();
       } else if (widget.controller.error != null && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(widget.controller.error!)),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(widget.controller.error!)));
       }
     } finally {
       if (mounted) setState(() => _picking = false);
@@ -515,8 +508,7 @@ class _TextChannelState extends State<_TextChannel> {
                       horizontal: 16,
                       vertical: 12,
                     ),
-                    itemCount:
-                        messages.length + (controller.hasMore ? 1 : 0),
+                    itemCount: messages.length + (controller.hasMore ? 1 : 0),
                     itemBuilder: (context, index) {
                       if (index == messages.length) {
                         return Center(
@@ -529,12 +521,10 @@ class _TextChannelState extends State<_TextChannel> {
                         );
                       }
 
-                      final message =
-                          messages[messages.length - 1 - index];
+                      final message = messages[messages.length - 1 - index];
                       return _MessageTile(
                         message: message,
-                        authorName:
-                            controller.memberName(message.authorId),
+                        authorName: controller.memberName(message.authorId),
                       );
                     },
                   ),
@@ -567,8 +557,9 @@ class _TextChannelState extends State<_TextChannel> {
                 const SizedBox(width: 8),
                 IconButton(
                   tooltip: 'Прикрепить файл',
-                  onPressed:
-                      (controller.sending || _picking) ? null : _pickAndSend,
+                  onPressed: (controller.sending || _picking)
+                      ? null
+                      : _pickAndSend,
                   icon: _picking
                       ? const SizedBox(
                           width: 18,
@@ -604,7 +595,8 @@ class _MessageTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final time = '${message.createdAt.hour.toString().padLeft(2, '0')}:'
+    final time =
+        '${message.createdAt.hour.toString().padLeft(2, '0')}:'
         '${message.createdAt.minute.toString().padLeft(2, '0')}';
 
     return Padding(
@@ -636,10 +628,7 @@ class _MessageTile extends StatelessWidget {
                     const SizedBox(width: 8),
                     Text(
                       time,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: kTextMuted,
-                      ),
+                      style: const TextStyle(fontSize: 11, color: kTextMuted),
                     ),
                     if (message.isEdited) ...[
                       const SizedBox(width: 6),
@@ -710,8 +699,7 @@ class _VoicePanel extends StatelessWidget {
       listenable: controller.voice,
       builder: (context, _) {
         final voice = controller.voice;
-        final inThisChannel =
-            voice.channelId == channel.id && voice.connected;
+        final inThisChannel = voice.channelId == channel.id && voice.connected;
 
         return ColoredBox(
           color: kBackground,
@@ -727,206 +715,212 @@ class _VoicePanel extends StatelessWidget {
               if (inThisChannel &&
                   (voice.screenShareTrack != null ||
                       voice.cameraTiles.isNotEmpty))
-                SizedBox(
-                  height: 240,
-                  child: _VideoStrip(voice: voice),
-                ),
+                SizedBox(height: 240, child: _VideoStrip(voice: voice)),
               Expanded(
                 child: Center(
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 420),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.graphic_eq,
-                          size: 64,
-                          color: kAccent,
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          inThisChannel
-                              ? 'Подключено'
-                              : 'Голосовой канал «${channel.name}»',
-                          style: const TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w700,
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.graphic_eq,
+                            size: 64,
+                            color: kAccent,
                           ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          inThisChannel
-                              ? 'Микрофон ${voice.micEnabled ? 'включён' : 'выключен'}, '
-                                  'звук ${voice.deafened ? 'выключен' : 'включён'}'
-                              : 'Нажмите, чтобы войти. Микрофон включится сразу.',
-                          style: const TextStyle(color: kTextMuted),
-                          textAlign: TextAlign.center,
-                        ),
-                        if (voice.error != null) ...[
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 16),
                           Text(
-                            voice.error!,
-                            style: const TextStyle(color: kDanger),
+                            inThisChannel
+                                ? 'Подключено'
+                                : 'Голосовой канал «${channel.name}»',
+                            style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w700,
+                            ),
                             textAlign: TextAlign.center,
                           ),
-                        ],
-                        const SizedBox(height: 20),
-                        if (!inThisChannel)
-                          ElevatedButton.icon(
-                            onPressed: voice.connecting
-                                ? null
-                                : () => controller.joinVoice(channel),
-                            icon: voice.connecting
-                                ? const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Icon(Icons.headset_mic),
-                            label: const Text('Подключиться'),
-                          )
-                        else
-                          Wrap(
-                            alignment: WrapAlignment.center,
-                            spacing: 12,
-                            runSpacing: 8,
-                            children: [
-                              FilledButton.icon(
-                                onPressed: voice.toggleMicrophone,
-                                icon: Icon(
-                                  voice.micEnabled ? Icons.mic : Icons.mic_off,
-                                ),
-                                label: Text(
-                                  voice.micEnabled
-                                      ? 'Выключить микрофон'
-                                      : 'Включить микрофон',
-                                ),
-                              ),
-                              if (voice.canVideo)
-                                OutlinedButton.icon(
-                                  onPressed: voice.toggleCamera,
-                                  icon: Icon(
-                                    voice.cameraEnabled
-                                        ? Icons.videocam
-                                        : Icons.videocam_off,
-                                  ),
-                                  label: Text(
-                                    voice.cameraEnabled
-                                        ? 'Выключить камеру'
-                                        : 'Включить камеру',
-                                  ),
-                                ),
-                              if (voice.canScreenShare)
-                                OutlinedButton.icon(
-                                  onPressed: voice.toggleScreenShare,
-                                  icon: const Icon(Icons.screen_share),
-                                  label: Text(
-                                    voice.screenSharing
-                                        ? 'Остановить показ'
-                                        : 'Показать экран',
-                                  ),
-                                ),
-                              OutlinedButton.icon(
-                                onPressed: voice.toggleDeafen,
-                                icon: Icon(
-                                  voice.deafened
-                                      ? Icons.volume_off
-                                      : Icons.volume_up,
-                                ),
-                                label: Text(
-                                  voice.deafened
-                                      ? 'Включить звук'
-                                      : 'Оглушить',
-                                ),
-                              ),
-                              OutlinedButton.icon(
-                                onPressed: controller.leaveVoice,
-                                icon: const Icon(Icons.call_end),
-                                label: const Text('Выйти'),
-                              ),
-                            ],
-                          ),
-                        if (inThisChannel) ...[
-                          const SizedBox(height: 28),
-                          const Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              'УЧАСТНИКИ',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: kTextMuted,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
                           const SizedBox(height: 8),
-                          if (voice.participants.isEmpty)
-                            const Text(
-                              'Пока никого',
-                              style: TextStyle(color: kTextMuted),
+                          Text(
+                            inThisChannel
+                                ? 'Микрофон ${voice.micEnabled ? 'включён' : 'выключен'}, '
+                                      'звук ${voice.deafened ? 'выключен' : 'включён'}'
+                                : 'Нажмите, чтобы войти. Микрофон включится сразу.',
+                            style: const TextStyle(color: kTextMuted),
+                            textAlign: TextAlign.center,
+                          ),
+                          if (voice.error != null) ...[
+                            const SizedBox(height: 12),
+                            Text(
+                              voice.error!,
+                              style: const TextStyle(color: kDanger),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                          const SizedBox(height: 20),
+                          if (!inThisChannel)
+                            ElevatedButton.icon(
+                              onPressed: voice.connecting
+                                  ? null
+                                  : () => controller.joinVoice(channel),
+                              icon: voice.connecting
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(Icons.headset_mic),
+                              label: const Text('Подключиться'),
                             )
                           else
-                            Column(
+                            Wrap(
+                              alignment: WrapAlignment.center,
+                              spacing: 12,
+                              runSpacing: 8,
                               children: [
-                                for (final participant
-                                    in voice.participants)
-                                  ListTile(
-                                    dense: true,
-                                    tileColor: voice.isSpeaking(participant.userId)
-                                        ? kAccent.withValues(alpha: 0.22)
-                                        : null,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(6),
+                                FilledButton.icon(
+                                  onPressed: voice.toggleMicrophone,
+                                  icon: Icon(
+                                    voice.micEnabled
+                                        ? Icons.mic
+                                        : Icons.mic_off,
+                                  ),
+                                  label: Text(
+                                    voice.micEnabled
+                                        ? 'Выключить микрофон'
+                                        : 'Включить микрофон',
+                                  ),
+                                ),
+                                if (voice.canVideo)
+                                  OutlinedButton.icon(
+                                    onPressed: voice.toggleCamera,
+                                    icon: Icon(
+                                      voice.cameraEnabled
+                                          ? Icons.videocam
+                                          : Icons.videocam_off,
                                     ),
-                                    leading: CircleAvatar(
-                                      radius: 14,
-                                      backgroundColor: kAccent,
-                                      child: Text(
-                                        participant.name
-                                            .substring(0, 1)
-                                            .toUpperCase(),
-                                        style: const TextStyle(fontSize: 12),
-                                      ),
-                                    ),
-                                    title: Text(participant.name),
-                                    trailing: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        if (voice.isSpeaking(participant.userId))
-                                          const Padding(
-                                            padding: EdgeInsets.only(right: 6),
-                                            child: Icon(
-                                              Icons.graphic_eq,
-                                              size: 16,
-                                              color: kOnline,
-                                            ),
-                                          ),
-                                        Icon(
-                                          participant.selfMute
-                                              ? Icons.mic_off
-                                              : Icons.mic,
-                                          size: 16,
-                                          color: kTextMuted,
-                                        ),
-                                        if (participant.selfDeaf)
-                                          const Padding(
-                                            padding: EdgeInsets.only(left: 4),
-                                            child: Icon(
-                                              Icons.volume_off,
-                                              size: 16,
-                                              color: kTextMuted,
-                                            ),
-                                          ),
-                                      ],
+                                    label: Text(
+                                      voice.cameraEnabled
+                                          ? 'Выключить камеру'
+                                          : 'Включить камеру',
                                     ),
                                   ),
+                                if (voice.canScreenShare)
+                                  OutlinedButton.icon(
+                                    onPressed: voice.toggleScreenShare,
+                                    icon: const Icon(Icons.screen_share),
+                                    label: Text(
+                                      voice.screenSharing
+                                          ? 'Остановить показ'
+                                          : 'Показать экран',
+                                    ),
+                                  ),
+                                OutlinedButton.icon(
+                                  onPressed: voice.toggleDeafen,
+                                  icon: Icon(
+                                    voice.deafened
+                                        ? Icons.volume_off
+                                        : Icons.volume_up,
+                                  ),
+                                  label: Text(
+                                    voice.deafened
+                                        ? 'Включить звук'
+                                        : 'Оглушить',
+                                  ),
+                                ),
+                                OutlinedButton.icon(
+                                  onPressed: controller.leaveVoice,
+                                  icon: const Icon(Icons.call_end),
+                                  label: const Text('Выйти'),
+                                ),
                               ],
                             ),
+                          if (inThisChannel) ...[
+                            const SizedBox(height: 28),
+                            const Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                'УЧАСТНИКИ',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: kTextMuted,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            if (voice.participants.isEmpty)
+                              const Text(
+                                'Пока никого',
+                                style: TextStyle(color: kTextMuted),
+                              )
+                            else
+                              Column(
+                                children: [
+                                  for (final participant in voice.participants)
+                                    ListTile(
+                                      dense: true,
+                                      tileColor:
+                                          voice.isSpeaking(participant.userId)
+                                          ? kAccent.withValues(alpha: 0.22)
+                                          : null,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      leading: CircleAvatar(
+                                        radius: 14,
+                                        backgroundColor: kAccent,
+                                        child: Text(
+                                          participant.name
+                                              .substring(0, 1)
+                                              .toUpperCase(),
+                                          style: const TextStyle(fontSize: 12),
+                                        ),
+                                      ),
+                                      title: Text(participant.name),
+                                      trailing: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          if (voice.isSpeaking(
+                                            participant.userId,
+                                          ))
+                                            const Padding(
+                                              padding: EdgeInsets.only(
+                                                right: 6,
+                                              ),
+                                              child: Icon(
+                                                Icons.graphic_eq,
+                                                size: 16,
+                                                color: kOnline,
+                                              ),
+                                            ),
+                                          Icon(
+                                            participant.selfMute
+                                                ? Icons.mic_off
+                                                : Icons.mic,
+                                            size: 16,
+                                            color: kTextMuted,
+                                          ),
+                                          if (participant.selfDeaf)
+                                            const Padding(
+                                              padding: EdgeInsets.only(left: 4),
+                                              child: Icon(
+                                                Icons.volume_off,
+                                                size: 16,
+                                                color: kTextMuted,
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                ],
+                              ),
+                          ],
                         ],
-                      ],
+                      ),
                     ),
                   ),
                 ),
@@ -1029,7 +1023,8 @@ class _VideoStrip extends StatelessWidget {
   }
 }
 
-class _ChannelHeader extends StatelessWidget {  const _ChannelHeader({
+class _ChannelHeader extends StatelessWidget {
+  const _ChannelHeader({
     required this.icon,
     required this.title,
     required this.subtitle,
@@ -1099,8 +1094,7 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
               ButtonSegment(value: 'voice', label: Text('Голосовой')),
             ],
             selected: {_type},
-            onSelectionChanged: (value) =>
-                setState(() => _type = value.first),
+            onSelectionChanged: (value) => setState(() => _type = value.first),
           ),
         ],
       ),

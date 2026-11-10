@@ -160,6 +160,10 @@ func TestJoinVoiceChannel(t *testing.T) {
 	if !result.CanPublish {
 		t.Fatal("владелец должен иметь право говорить")
 	}
+	if !result.CanVideo || !result.CanScreenShare {
+		t.Fatalf("владелец должен иметь видео: video=%v screen=%v",
+			result.CanVideo, result.CanScreenShare)
+	}
 	if result.Token == "" {
 		t.Fatal("пустой токен")
 	}

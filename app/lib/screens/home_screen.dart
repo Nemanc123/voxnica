@@ -1,9 +1,11 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:livekit_client/livekit_client.dart';
 
 import '../api/models.dart';
 import '../gateway/gateway_client.dart';
 import '../state/app_controller.dart';
+import '../state/voice_controller.dart';
 import '../theme.dart';
 import 'channel_screen.dart';
 
@@ -722,6 +724,14 @@ class _VoicePanel extends StatelessWidget {
                     ? 'вы в голосовом канале'
                     : 'голосовой канал',
               ),
+              if (inThisChannel &&
+                  (voice.screenShareTrack != null ||
+                      voice.localCameraTrack != null ||
+                      voice.remoteCameraTracks.isNotEmpty))
+                SizedBox(
+                  height: 240,
+                  child: _VideoStrip(voice: voice),
+                ),
               Expanded(
                 child: Center(
                   child: ConstrainedBox(
@@ -796,6 +806,30 @@ class _VoicePanel extends StatelessWidget {
                                       : 'Включить микрофон',
                                 ),
                               ),
+                              if (voice.canVideo)
+                                OutlinedButton.icon(
+                                  onPressed: voice.toggleCamera,
+                                  icon: Icon(
+                                    voice.cameraEnabled
+                                        ? Icons.videocam
+                                        : Icons.videocam_off,
+                                  ),
+                                  label: Text(
+                                    voice.cameraEnabled
+                                        ? 'Выключить камеру'
+                                        : 'Включить камеру',
+                                  ),
+                                ),
+                              if (voice.canScreenShare)
+                                OutlinedButton.icon(
+                                  onPressed: voice.toggleScreenShare,
+                                  icon: const Icon(Icons.screen_share),
+                                  label: Text(
+                                    voice.screenSharing
+                                        ? 'Остановить показ'
+                                        : 'Показать экран',
+                                  ),
+                                ),
                               OutlinedButton.icon(
                                 onPressed: voice.toggleDeafen,
                                 icon: Icon(
@@ -906,8 +940,46 @@ class _VoicePanel extends StatelessWidget {
   }
 }
 
-class _ChannelHeader extends StatelessWidget {
-  const _ChannelHeader({
+class _VideoStrip extends StatelessWidget {
+  const _VideoStrip({required this.voice});
+
+  final VoiceController voice;
+
+  @override
+  Widget build(BuildContext context) {
+    final screen = voice.screenShareTrack;
+    if (screen != null) {
+      return ColoredBox(
+        color: Colors.black,
+        child: VideoTrackRenderer(screen, fit: VideoViewFit.contain),
+      );
+    }
+
+    final tracks = <VideoTrack>[
+      if (voice.localCameraTrack != null) voice.localCameraTrack!,
+      ...voice.remoteCameraTracks,
+    ];
+
+    return ColoredBox(
+      color: Colors.black,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.all(8),
+        itemCount: tracks.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
+        itemBuilder: (context, index) => ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: SizedBox(
+            width: 300,
+            child: VideoTrackRenderer(tracks[index]),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ChannelHeader extends StatelessWidget {  const _ChannelHeader({
     required this.icon,
     required this.title,
     required this.subtitle,

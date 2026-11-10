@@ -24,6 +24,10 @@ class VoiceController extends ChangeNotifier {
   bool _connecting = false;
   bool _micEnabled = false;
   bool _deafened = false;
+  bool _cameraEnabled = false;
+  bool _screenSharing = false;
+  bool _canVideo = false;
+  bool _canScreenShare = false;
   String? _error;
 
   String? get channelId => _channelId;
@@ -31,8 +35,70 @@ class VoiceController extends ChangeNotifier {
   bool get connecting => _connecting;
   bool get micEnabled => _micEnabled;
   bool get deafened => _deafened;
+  bool get cameraEnabled => _cameraEnabled;
+  bool get screenSharing => _screenSharing;
+  bool get canVideo => _canVideo;
+  bool get canScreenShare => _canScreenShare;
   bool get connected => _room != null;
   String? get error => _error;
+
+  /// Локальная камера — для превью в сетке.
+  LocalVideoTrack? get localCameraTrack {
+    final participant = _room?.localParticipant;
+    if (participant == null) return null;
+
+    for (final publication in participant.videoTrackPublications) {
+      if (publication.source == TrackSource.camera &&
+          publication.track is LocalVideoTrack) {
+        return publication.track as LocalVideoTrack;
+      }
+    }
+    return null;
+  }
+
+  /// Камеры других участников.
+  List<VideoTrack> get remoteCameraTracks {
+    final out = <VideoTrack>[];
+    final participants = _room?.remoteParticipants.values;
+    if (participants == null) return out;
+
+    for (final participant in participants) {
+      for (final publication in participant.videoTrackPublications) {
+        final track = publication.track;
+        if (publication.source == TrackSource.camera && track != null) {
+          out.add(track);
+        }
+      }
+    }
+    return out;
+  }
+
+  /// Демонстрация экрана: своя или чужая.
+  VideoTrack? get screenShareTrack {
+    final local = _room?.localParticipant;
+    if (local != null) {
+      for (final publication in local.videoTrackPublications) {
+        if (publication.source == TrackSource.screenShareVideo &&
+            publication.track is VideoTrack) {
+          return publication.track as VideoTrack;
+        }
+      }
+    }
+
+    final participants = _room?.remoteParticipants.values;
+    if (participants == null) return null;
+
+    for (final participant in participants) {
+      for (final publication in participant.videoTrackPublications) {
+        final track = publication.track;
+        if (publication.source == TrackSource.screenShareVideo &&
+            track is VideoTrack) {
+          return track;
+        }
+      }
+    }
+    return null;
+  }
 
   bool isSpeaking(String userId) => _speaking.contains(userId);
 
@@ -50,6 +116,8 @@ class VoiceController extends ChangeNotifier {
       await room.connect(info.url, info.token);
 
       _room = room;
+      _canVideo = info.canVideo;
+      _canScreenShare = info.canScreenShare;
       _listener = room.createListener()
         ..on<ActiveSpeakersChangedEvent>((event) {
           _speaking = event.speakers.map((p) => p.identity).toSet();
@@ -60,9 +128,11 @@ class VoiceController extends ChangeNotifier {
           if (_deafened && event.track is RemoteAudioTrack) {
             await event.track.stop();
           }
-        });
+          notifyListeners();
+        })
+        ..on<TrackUnsubscribedEvent>((_) => notifyListeners());
 
-      if (info.canPublish) {
+      if (info.canSpeak) {
         await room.localParticipant?.setMicrophoneEnabled(true);
         _micEnabled = true;
       }
@@ -112,8 +182,37 @@ class VoiceController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> toggleDeafen() async {
+  Future<void> toggleCamera() async {
     final room = _room;
+    if (room == null || !_canVideo) return;
+
+    final next = !_cameraEnabled;
+    try {
+      await room.localParticipant?.setCameraEnabled(next);
+      _cameraEnabled = next;
+      _error = null;
+    } catch (e) {
+      _error = 'Камера недоступна: $e';
+    }
+    notifyListeners();
+  }
+
+  Future<void> toggleScreenShare() async {
+    final room = _room;
+    if (room == null || !_canScreenShare) return;
+
+    final next = !_screenSharing;
+    try {
+      await room.localParticipant?.setScreenShareEnabled(next);
+      _screenSharing = next;
+      _error = null;
+    } catch (e) {
+      _error = 'Демонстрация экрана недоступна: $e';
+    }
+    notifyListeners();
+  }
+
+  Future<void> toggleDeafen() async {    final room = _room;
     if (room == null) return;
 
     final next = !_deafened;
@@ -172,6 +271,10 @@ class VoiceController extends ChangeNotifier {
     _speaking = const {};
     _micEnabled = false;
     _deafened = false;
+    _cameraEnabled = false;
+    _screenSharing = false;
+    _canVideo = false;
+    _canScreenShare = false;
     _error = null;
 
     if (room != null) {

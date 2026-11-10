@@ -280,18 +280,27 @@ class VoiceJoinInfo {
     required this.url,
     required this.room,
     required this.canPublish,
+    required this.canSpeak,
+    required this.canVideo,
+    required this.canScreenShare,
   });
 
   final String token;
   final String url;
   final String room;
   final bool canPublish;
+  final bool canSpeak;
+  final bool canVideo;
+  final bool canScreenShare;
 
   factory VoiceJoinInfo.fromJson(Map<String, dynamic> json) => VoiceJoinInfo(
         token: json['token'] as String,
         url: json['url'] as String,
         room: json['room'] as String,
         canPublish: json['can_publish'] as bool? ?? false,
+        canSpeak: json['can_speak'] as bool? ?? false,
+        canVideo: json['can_video'] as bool? ?? false,
+        canScreenShare: json['can_screen_share'] as bool? ?? false,
       );
 }
 

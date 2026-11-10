@@ -23,8 +23,18 @@ type TokenIssuer struct {
 // Issue возвращает токен для комнаты room.
 //
 // canPublish отвечает за микрофон: без права Speak клиент сможет только
-// слушать. Видео на этом этапе не выдаётся — оно появится на этапе 6.
+// слушать. Видео выдаётся отдельно через IssueWithSources.
 func (i TokenIssuer) Issue(userID, name, room string, canPublish bool) (string, error) {
+	var sources []string
+	if canPublish {
+		sources = []string{"microphone"}
+	}
+	return i.IssueWithSources(userID, name, room, sources)
+}
+
+// IssueWithSources выдаёт токен с конкретными источниками публикации:
+// microphone, camera, screen_share, screen_share_audio.
+func (i TokenIssuer) IssueWithSources(userID, name, room string, sources []string) (string, error) {
 	if i.APIKey == "" || i.APISecret == "" {
 		return "", fmt.Errorf("не настроены ключи LiveKit")
 	}
@@ -42,11 +52,12 @@ func (i TokenIssuer) Issue(userID, name, room string, canPublish bool) (string, 
 		"nbf":  now.Unix(),
 		"exp":  now.Add(ttl).Unix(),
 		"video": map[string]any{
-			"room":           room,
-			"roomJoin":       true,
-			"canPublish":     canPublish,
-			"canSubscribe":   true,
-			"canPublishData": true,
+			"room":              room,
+			"roomJoin":          true,
+			"canPublish":        len(sources) > 0,
+			"canPublishSources": sources,
+			"canSubscribe":      true,
+			"canPublishData":    true,
 		},
 	}
 

@@ -32,11 +32,14 @@ type Publisher interface {
 
 // JoinResult — всё, что нужно клиенту, чтобы подключиться к комнате.
 type JoinResult struct {
-	Token      string `json:"token"`
-	URL        string `json:"url"`
-	Room       string `json:"room"`
-	ExpiresIn  int    `json:"expires_in"`
-	CanPublish bool   `json:"can_publish"`
+	Token          string `json:"token"`
+	URL            string `json:"url"`
+	Room           string `json:"room"`
+	ExpiresIn      int    `json:"expires_in"`
+	CanPublish     bool   `json:"can_publish"`
+	CanSpeak       bool   `json:"can_speak"`
+	CanVideo       bool   `json:"can_video"`
+	CanScreenShare bool   `json:"can_screen_share"`
 }
 
 type Service struct {
@@ -75,18 +78,35 @@ func (s *Service) Join(ctx context.Context, userID, channelID string) (JoinResul
 		name = *user.DisplayName
 	}
 
-	token, err := s.issuer.Issue(user.ID, name, channel.ID, p.Has(perms.Speak))
+	token, err := s.issuer.IssueWithSources(user.ID, name, channel.ID, publishSources(p))
 	if err != nil {
 		return JoinResult{}, err
 	}
 
 	return JoinResult{
-		Token:      token,
-		URL:        s.url,
-		Room:       channel.ID,
-		ExpiresIn:  int(s.issuer.TTL.Seconds()),
-		CanPublish: p.Has(perms.Speak),
+		Token:          token,
+		URL:            s.url,
+		Room:           channel.ID,
+		ExpiresIn:      int(s.issuer.TTL.Seconds()),
+		CanPublish:     p.Has(perms.Speak) || p.Has(perms.Video),
+		CanSpeak:       p.Has(perms.Speak),
+		CanVideo:       p.Has(perms.Video),
+		CanScreenShare: p.Has(perms.Video),
 	}, nil
+}
+
+// publishSources переводит биты прав в источники публикации LiveKit.
+// Микрофон — SPEAK, камера и экран — VIDEO. Права независимы: можно
+// иметь камеру без микрофона.
+func publishSources(p perms.Permission) []string {
+	sources := make([]string, 0, 4)
+	if p.Has(perms.Speak) {
+		sources = append(sources, "microphone")
+	}
+	if p.Has(perms.Video) {
+		sources = append(sources, "camera", "screen_share", "screen_share_audio")
+	}
+	return sources
 }
 
 // SetState обновляет mute/deaf текущего пользователя. Клиент зовёт это

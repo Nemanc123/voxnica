@@ -59,6 +59,40 @@ func TestIssueTokenGrants(t *testing.T) {
 	}
 }
 
+func TestIssueTokenWithVideoSources(t *testing.T) {
+	issuer := voice.TokenIssuer{APIKey: "devkey", APISecret: "secret"}
+
+	token, err := issuer.IssueWithSources(
+		"user-1",
+		"Алиса",
+		"channel-1",
+		[]string{"microphone", "camera", "screen_share"},
+	)
+	if err != nil {
+		t.Fatalf("токен: %v", err)
+	}
+
+	claims := parseToken(t, token, "secret")
+	video := claims["video"].(map[string]any)
+	if video["canPublish"] != true {
+		t.Fatalf("canPublish = %v", video["canPublish"])
+	}
+
+	raw, ok := video["canPublishSources"].([]any)
+	if !ok {
+		t.Fatalf("нет canPublishSources: %v", video)
+	}
+	sources := make(map[string]bool, len(raw))
+	for _, item := range raw {
+		sources[item.(string)] = true
+	}
+	for _, want := range []string{"microphone", "camera", "screen_share"} {
+		if !sources[want] {
+			t.Fatalf("нет источника %s в %v", want, sources)
+		}
+	}
+}
+
 func TestIssueTokenWithoutSpeak(t *testing.T) {
 	issuer := voice.TokenIssuer{APIKey: "devkey", APISecret: "secret"}
 

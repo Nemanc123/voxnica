@@ -726,8 +726,7 @@ class _VoicePanel extends StatelessWidget {
               ),
               if (inThisChannel &&
                   (voice.screenShareTrack != null ||
-                      voice.localCameraTrack != null ||
-                      voice.remoteCameraTracks.isNotEmpty))
+                      voice.cameraTiles.isNotEmpty))
                 SizedBox(
                   height: 240,
                   child: _VideoStrip(voice: voice),
@@ -951,28 +950,79 @@ class _VideoStrip extends StatelessWidget {
     if (screen != null) {
       return ColoredBox(
         color: Colors.black,
-        child: VideoTrackRenderer(screen, fit: VideoViewFit.contain),
+        child: GestureDetector(
+          onTap: () => _openFullScreen(context, screen),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              VideoTrackRenderer(screen, fit: VideoViewFit.contain),
+              const Positioned(
+                right: 8,
+                top: 8,
+                child: Icon(Icons.fullscreen, color: Colors.white70),
+              ),
+            ],
+          ),
+        ),
       );
     }
 
-    final tracks = <VideoTrack>[
-      if (voice.localCameraTrack != null) voice.localCameraTrack!,
-      ...voice.remoteCameraTracks,
-    ];
+    final tiles = voice.cameraTiles;
 
     return ColoredBox(
       color: Colors.black,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.all(8),
-        itemCount: tracks.length,
+        itemCount: tiles.length,
         separatorBuilder: (_, _) => const SizedBox(width: 8),
-        itemBuilder: (context, index) => ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: SizedBox(
-            width: 300,
-            child: VideoTrackRenderer(tracks[index]),
+        itemBuilder: (context, index) {
+          final tile = tiles[index];
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: SizedBox(
+              width: 240,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  VideoTrackRenderer(tile.track, fit: VideoViewFit.cover),
+                  Positioned(
+                    left: 6,
+                    bottom: 6,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        tile.name,
+                        style: const TextStyle(fontSize: 11),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  void _openFullScreen(BuildContext context, VideoTrack track) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => Scaffold(
+          backgroundColor: Colors.black,
+          appBar: AppBar(
+            backgroundColor: Colors.black,
+            title: const Text('Демонстрация экрана'),
           ),
+          body: Center(child: VideoTrackRenderer(track)),
         ),
       ),
     );

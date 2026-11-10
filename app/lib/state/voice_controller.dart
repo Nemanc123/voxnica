@@ -11,6 +11,20 @@ import '../api/models.dart';
 /// Токен и адрес выдаёт наш API, дальше клиент соединяется с LiveKit
 /// напрямую. Список участников берём из БД через API: LiveKit знает
 /// только тех, кто уже в комнате, а нам нужны имена и статусы.
+
+/// Один видеотрек в сетке: локальная камера или камера участника.
+class VideoTile {
+  const VideoTile({
+    required this.track,
+    required this.name,
+    required this.isLocal,
+  });
+
+  final VideoTrack track;
+  final String name;
+  final bool isLocal;
+}
+
 class VoiceController extends ChangeNotifier {
   VoiceController(this.api);
 
@@ -70,6 +84,36 @@ class VoiceController extends ChangeNotifier {
         }
       }
     }
+    return out;
+  }
+
+  /// Камеры для сетки: локальная и чужие, с именами.
+  List<VideoTile> get cameraTiles {
+    final out = <VideoTile>[];
+
+    final local = localCameraTrack;
+    if (local != null) {
+      out.add(VideoTile(track: local, name: 'Вы', isLocal: true));
+    }
+
+    final participants = _room?.remoteParticipants.values;
+    if (participants == null) return out;
+
+    for (final participant in participants) {
+      for (final publication in participant.videoTrackPublications) {
+        final track = publication.track;
+        if (publication.source == TrackSource.camera && track != null) {
+          out.add(VideoTile(
+            track: track,
+            name: participant.name.isEmpty
+                ? participant.identity
+                : participant.name,
+            isLocal: false,
+          ));
+        }
+      }
+    }
+
     return out;
   }
 

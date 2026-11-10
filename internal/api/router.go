@@ -23,6 +23,7 @@ type Deps struct {
 	Presence *PresenceHandlers
 	Gateway  http.Handler
 	Voice    *VoiceHandlers
+	DM       *DMHandlers
 }
 
 func NewRouter(d Deps) http.Handler {
@@ -79,6 +80,12 @@ func NewRouter(d Deps) http.Handler {
 			r.Delete("/guilds/{guildID}/members/{userID}/roles/{roleID}", d.Guild.UnassignRole)
 			r.Post("/guilds/{guildID}/invites", d.Guild.CreateInvite)
 			r.Post("/invites/{code}", d.Guild.JoinByInvite)
+
+			// Личные сообщения.
+			if d.DM != nil {
+				r.Post("/dms", d.DM.Open)
+				r.Get("/dms", d.DM.List)
+			}
 
 			// Сообщения.
 			r.Post("/channels/{channelID}/messages", d.Messages.Create)

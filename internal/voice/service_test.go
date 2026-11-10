@@ -16,6 +16,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/Nemanc123/voxnica/internal/dm"
 	"github.com/Nemanc123/voxnica/internal/guild"
 	"github.com/Nemanc123/voxnica/internal/perms"
 	"github.com/Nemanc123/voxnica/internal/store"
@@ -47,6 +48,7 @@ func (r *recordingPublisher) last() voice.Event {
 type voiceEnv struct {
 	service  *voice.Service
 	guilds   *guild.Service
+	dm       *dm.Service
 	store    *store.Store
 	pub      *recordingPublisher
 	owner    string
@@ -80,12 +82,13 @@ func newVoiceEnv(t *testing.T) voiceEnv {
 
 	st := store.New(tx)
 	gs := guild.NewService(st)
+	dmSvc := dm.NewService(st)
 	pub := &recordingPublisher{}
 	svc := voice.NewService(st, gs, voice.TokenIssuer{
 		APIKey:    "devkey",
 		APISecret: "secret",
 		TTL:       5 * time.Minute,
-	}, "ws://localhost:7880", pub)
+	}, "ws://localhost:7880", pub).WithDM(dmSvc)
 
 	owner := makeVoiceUser(t, ctx, st)
 	member := makeVoiceUser(t, ctx, st)
@@ -115,6 +118,7 @@ func newVoiceEnv(t *testing.T) voiceEnv {
 	return voiceEnv{
 		service:  svc,
 		guilds:   gs,
+		dm:       dmSvc,
 		store:    st,
 		pub:      pub,
 		owner:    owner,

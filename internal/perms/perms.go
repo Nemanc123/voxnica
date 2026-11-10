@@ -44,6 +44,12 @@ const DefaultEveryone = ViewChannel | SendMessages | EmbedLinks |
 	AttachFiles | AddReactions | ReadMessageHistory |
 	Connect | Speak | Video | CreateInvite
 
+// DMDefault — права получателя личного канала. Ролей и переопределений
+// там нет: доступ есть ровно у тех, кто указан в channel_recipients.
+const DMDefault = ViewChannel | SendMessages | EmbedLinks |
+	AttachFiles | AddReactions | ReadMessageHistory |
+	Connect | Speak | Video
+
 // Has проверяет наличие права с учётом администратора.
 func (p Permission) Has(want Permission) bool {
 	if p&Administrator != 0 {

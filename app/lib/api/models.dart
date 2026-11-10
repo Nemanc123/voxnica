@@ -4,26 +4,21 @@
 library;
 
 class User {
-  const User({
-    required this.id,
-    required this.username,
-    this.displayName,
-  });
+  const User({required this.id, required this.username, this.displayName});
 
   final String id;
   final String username;
   final String? displayName;
 
-  String get name =>
-      (displayName != null && displayName!.trim().isNotEmpty)
-          ? displayName!
-          : username;
+  String get name => (displayName != null && displayName!.trim().isNotEmpty)
+      ? displayName!
+      : username;
 
   factory User.fromJson(Map<String, dynamic> json) => User(
-        id: json['id'] as String,
-        username: json['username'] as String? ?? '',
-        displayName: json['display_name'] as String?,
-      );
+    id: json['id'] as String,
+    username: json['username'] as String? ?? '',
+    displayName: json['display_name'] as String?,
+  );
 }
 
 class AuthSession {
@@ -54,22 +49,22 @@ class AuthSession {
   /// Формат для локального хранения. Отличается от ответа API:
   /// там `expires_in` в секундах, здесь — абсолютное время.
   Map<String, dynamic> toStorageJson() => {
-        'user': {
-          'id': user.id,
-          'username': user.username,
-          'display_name': user.displayName,
-        },
-        'access_token': accessToken,
-        'refresh_token': refreshToken,
-        'expires_at': expiresAt?.toUtc().toIso8601String(),
-      };
+    'user': {
+      'id': user.id,
+      'username': user.username,
+      'display_name': user.displayName,
+    },
+    'access_token': accessToken,
+    'refresh_token': refreshToken,
+    'expires_at': expiresAt?.toUtc().toIso8601String(),
+  };
 
   factory AuthSession.fromStorageJson(Map<String, dynamic> json) => AuthSession(
-        user: User.fromJson(json['user'] as Map<String, dynamic>),
-        accessToken: json['access_token'] as String,
-        refreshToken: json['refresh_token'] as String,
-        expiresAt: DateTime.tryParse(json['expires_at'] as String? ?? ''),
-      );
+    user: User.fromJson(json['user'] as Map<String, dynamic>),
+    accessToken: json['access_token'] as String,
+    refreshToken: json['refresh_token'] as String,
+    expiresAt: DateTime.tryParse(json['expires_at'] as String? ?? ''),
+  );
 }
 
 class Guild {
@@ -87,30 +82,83 @@ class Guild {
   }
 
   factory Guild.fromJson(Map<String, dynamic> json) => Guild(
-        id: json['id'] as String,
-        name: json['name'] as String? ?? 'Без названия',
-      );
+    id: json['id'] as String,
+    name: json['name'] as String? ?? 'Без названия',
+  );
 }
 
 class Channel {
-  const Channel({
-    required this.id,
-    required this.name,
-    required this.type,
-  });
+  const Channel({required this.id, required this.name, required this.type});
 
   final String id;
   final String name;
   final String type;
 
   bool get isVoice => type == 'voice';
-  bool get isText => type == 'text';
+  bool get isDm => type == 'dm' || type == 'group_dm';
+  bool get isText => type == 'text' || isDm;
 
   factory Channel.fromJson(Map<String, dynamic> json) => Channel(
-        id: json['id'] as String,
-        name: (json['name'] as String?) ?? 'без имени',
-        type: json['type'] as String? ?? 'text',
-      );
+    id: json['id'] as String,
+    name: (json['name'] as String?) ?? 'без имени',
+    type: json['type'] as String? ?? 'text',
+  );
+}
+
+/// Собеседник в личном канале.
+class DmParticipant {
+  const DmParticipant({
+    required this.userId,
+    required this.username,
+    this.displayName,
+  });
+
+  final String userId;
+  final String username;
+  final String? displayName;
+
+  String get name {
+    if (displayName != null && displayName!.trim().isNotEmpty) {
+      return displayName!;
+    }
+    return username;
+  }
+
+  factory DmParticipant.fromJson(Map<String, dynamic> json) => DmParticipant(
+    userId: json['user_id'] as String,
+    username: json['username'] as String? ?? 'неизвестный',
+    displayName: json['display_name'] as String?,
+  );
+}
+
+/// Личный канал: id совпадает с id канала сообщений и голосовой комнаты.
+class DmChannel {
+  const DmChannel({
+    required this.id,
+    required this.type,
+    required this.recipients,
+  });
+
+  final String id;
+  final String type;
+  final List<DmParticipant> recipients;
+
+  /// Имя диалога — собеседник, а не я.
+  String title(String selfId) {
+    for (final participant in recipients) {
+      if (participant.userId != selfId) return participant.name;
+    }
+    return 'Личный канал';
+  }
+
+  factory DmChannel.fromJson(Map<String, dynamic> json) => DmChannel(
+    id: json['id'] as String,
+    type: json['type'] as String? ?? 'dm',
+    recipients: (json['recipients'] as List<dynamic>? ?? [])
+        .cast<Map<String, dynamic>>()
+        .map(DmParticipant.fromJson)
+        .toList(),
+  );
 }
 
 class GuildDetail {
@@ -157,12 +205,12 @@ class Attachment {
   }
 
   factory Attachment.fromJson(Map<String, dynamic> json) => Attachment(
-        id: json['id'] as String,
-        filename: json['filename'] as String? ?? 'файл',
-        contentType: json['content_type'] as String? ?? '',
-        sizeBytes: (json['size_bytes'] as num?)?.toInt() ?? 0,
-        storageKey: json['storage_key'] as String? ?? '',
-      );
+    id: json['id'] as String,
+    filename: json['filename'] as String? ?? 'файл',
+    contentType: json['content_type'] as String? ?? '',
+    sizeBytes: (json['size_bytes'] as num?)?.toInt() ?? 0,
+    storageKey: json['storage_key'] as String? ?? '',
+  );
 }
 
 class PresignResult {
@@ -172,9 +220,9 @@ class PresignResult {
   final String uploadUrl;
 
   factory PresignResult.fromJson(Map<String, dynamic> json) => PresignResult(
-        storageKey: json['storage_key'] as String,
-        uploadUrl: json['upload_url'] as String,
-      );
+    storageKey: json['storage_key'] as String,
+    uploadUrl: json['upload_url'] as String,
+  );
 }
 
 class PendingAttachment {
@@ -191,11 +239,11 @@ class PendingAttachment {
   final int sizeBytes;
 
   Map<String, dynamic> toJson() => {
-        'storage_key': storageKey,
-        'filename': filename,
-        'content_type': contentType,
-        'size_bytes': sizeBytes,
-      };
+    'storage_key': storageKey,
+    'filename': filename,
+    'content_type': contentType,
+    'size_bytes': sizeBytes,
+  };
 }
 
 class Message {
@@ -228,21 +276,20 @@ class Message {
   }
 
   factory Message.fromJson(Map<String, dynamic> json) => Message(
-        id: json['id'] as String,
-        seq: (json['seq'] as num).toInt(),
-        channelId: json['channel_id'] as String,
-        authorId: json['author_id'] as String?,
-        content: json['content'] as String? ?? '',
-        createdAt:
-            DateTime.tryParse(json['created_at'] as String? ?? '')?.toLocal() ??
-                DateTime.now(),
-        editedAt:
-            DateTime.tryParse(json['edited_at'] as String? ?? '')?.toLocal(),
-        attachments: (json['attachments'] as List<dynamic>? ?? [])
-            .cast<Map<String, dynamic>>()
-            .map(Attachment.fromJson)
-            .toList(),
-      );
+    id: json['id'] as String,
+    seq: (json['seq'] as num).toInt(),
+    channelId: json['channel_id'] as String,
+    authorId: json['author_id'] as String?,
+    content: json['content'] as String? ?? '',
+    createdAt:
+        DateTime.tryParse(json['created_at'] as String? ?? '')?.toLocal() ??
+        DateTime.now(),
+    editedAt: DateTime.tryParse(json['edited_at'] as String? ?? '')?.toLocal(),
+    attachments: (json['attachments'] as List<dynamic>? ?? [])
+        .cast<Map<String, dynamic>>()
+        .map(Attachment.fromJson)
+        .toList(),
+  );
 }
 
 class GuildMember {
@@ -267,11 +314,11 @@ class GuildMember {
   }
 
   factory GuildMember.fromJson(Map<String, dynamic> json) => GuildMember(
-        userId: json['user_id'] as String,
-        username: json['username'] as String? ?? 'участник',
-        displayName: json['display_name'] as String?,
-        nickname: json['nickname'] as String?,
-      );
+    userId: json['user_id'] as String,
+    username: json['username'] as String? ?? 'участник',
+    displayName: json['display_name'] as String?,
+    nickname: json['nickname'] as String?,
+  );
 }
 
 class VoiceJoinInfo {
@@ -294,14 +341,14 @@ class VoiceJoinInfo {
   final bool canScreenShare;
 
   factory VoiceJoinInfo.fromJson(Map<String, dynamic> json) => VoiceJoinInfo(
-        token: json['token'] as String,
-        url: json['url'] as String,
-        room: json['room'] as String,
-        canPublish: json['can_publish'] as bool? ?? false,
-        canSpeak: json['can_speak'] as bool? ?? false,
-        canVideo: json['can_video'] as bool? ?? false,
-        canScreenShare: json['can_screen_share'] as bool? ?? false,
-      );
+    token: json['token'] as String,
+    url: json['url'] as String,
+    room: json['room'] as String,
+    canPublish: json['can_publish'] as bool? ?? false,
+    canSpeak: json['can_speak'] as bool? ?? false,
+    canVideo: json['can_video'] as bool? ?? false,
+    canScreenShare: json['can_screen_share'] as bool? ?? false,
+  );
 }
 
 class VoiceParticipant {
@@ -319,10 +366,9 @@ class VoiceParticipant {
   final bool selfMute;
   final bool selfDeaf;
 
-  String get name =>
-      (displayName != null && displayName!.trim().isNotEmpty)
-          ? displayName!
-          : username;
+  String get name => (displayName != null && displayName!.trim().isNotEmpty)
+      ? displayName!
+      : username;
 
   factory VoiceParticipant.fromJson(Map<String, dynamic> json) =>
       VoiceParticipant(

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Nemanc123/voxnica/internal/dm"
 	"github.com/Nemanc123/voxnica/internal/guild"
 	"github.com/Nemanc123/voxnica/internal/perms"
 	"github.com/Nemanc123/voxnica/internal/store"
@@ -40,6 +41,12 @@ type Event struct {
 	Data      any
 }
 
+// UserPublisher — адресная доставка личных событий. Реализуют хаб и fan-out;
+// интерфейс отдельный, чтобы тесты и одиночный узел могли его не иметь.
+type UserPublisher interface {
+	PublishToUsers(ctx context.Context, userIDs []string, eventType string, data any)
+}
+
 // Publisher отвязывает сервис от конкретного способа доставки.
 // Реализация — либо внутрипроцессный хаб, либо хаб + Redis pub/sub
 // (см. internal/fanout).
@@ -57,12 +64,20 @@ type AttachmentStorage interface {
 type Service struct {
 	store   *store.Store
 	guild   *guild.Service
+	dm      *dm.Service
 	pub     Publisher
 	storage AttachmentStorage
 }
 
 func NewService(st *store.Store, gs *guild.Service, pub Publisher) *Service {
 	return &Service{store: st, guild: gs, pub: pub}
+}
+
+// WithDM включает личные каналы. Без него DM-каналы недоступны, а сервер
+// продолжает работать как раньше.
+func (s *Service) WithDM(d *dm.Service) *Service {
+	s.dm = d
+	return s
 }
 
 // WithStorage включает поддержку вложений. Без хранилища сервис работает
@@ -456,8 +471,23 @@ func (s *Service) authorize(ctx context.Context, userID, channelID string, want 
 	if err != nil {
 		return store.Channel{}, err
 	}
+
+	// Личный канал: ролей нет, доступ есть ровно у получателей.
 	if channel.GuildID == nil {
-		return store.Channel{}, fmt.Errorf("%w: личные каналы пока не поддерживаются", ErrValidation)
+		if s.dm == nil {
+			return store.Channel{}, fmt.Errorf("%w: личные каналы отключены", ErrForbidden)
+		}
+		p, ok, err := s.dm.Access(ctx, userID, channel.ID)
+		if err != nil {
+			return store.Channel{}, err
+		}
+		if !ok {
+			return store.Channel{}, fmt.Errorf("%w: вы не участник этого диалога", ErrForbidden)
+		}
+		if !p.Has(want) {
+			return store.Channel{}, fmt.Errorf("%w: нужно право %b", ErrForbidden, int64(want))
+		}
+		return channel, nil
 	}
 
 	member, err := s.store.MemberExists(ctx, *channel.GuildID, userID)
@@ -480,8 +510,24 @@ func (s *Service) authorize(ctx context.Context, userID, channelID string, want 
 }
 
 func (s *Service) publish(ctx context.Context, channel store.Channel, event Event) {
-	if s.pub == nil || channel.GuildID == nil {
+	if s.pub == nil {
 		return
 	}
-	s.pub.Publish(ctx, *channel.GuildID, event)
+
+	if channel.GuildID != nil {
+		s.pub.Publish(ctx, *channel.GuildID, event)
+		return
+	}
+
+	// Личный канал: доставляем только получателям, без фильтра гильдии.
+	if s.dm == nil {
+		return
+	}
+	recipients, err := s.dm.RecipientIDs(ctx, channel.ID)
+	if err != nil {
+		return
+	}
+	if up, ok := s.pub.(UserPublisher); ok {
+		up.PublishToUsers(ctx, recipients, event.Type, event.Data)
+	}
 }

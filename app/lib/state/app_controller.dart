@@ -27,6 +27,8 @@ class AppController extends ChangeNotifier {
   Guild? _guild;
   List<Channel> _channels = const [];
   Channel? _channel;
+  List<DmChannel> _dms = const [];
+  DmChannel? _dm;
   List<Message> _messages = const [];
   Map<String, GuildMember> _members = const {};
   bool _busy = false;
@@ -46,13 +48,19 @@ class AppController extends ChangeNotifier {
   Guild? get guild => _guild;
   List<Channel> get channels => _channels;
   Channel? get channel => _channel;
+  List<DmChannel> get dms => _dms;
+  DmChannel? get dm => _dm;
   List<Message> get messages => _messages;
+  List<GuildMember> get members =>
+      _members.values.toList()
+        ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
   String memberName(String? userId) {
     if (userId == null) return 'система';
     final member = _members[userId];
     if (member != null) return member.name;
     return userId.length >= 8 ? userId.substring(0, 8) : userId;
   }
+
   bool get busy => _busy;
   bool get loadingMessages => _loadingMessages;
   bool get sending => _sending;
@@ -70,6 +78,7 @@ class AppController extends ChangeNotifier {
       _user = api.user;
       _stage = AppStage.ready;
       await _loadGuilds();
+      await _loadDms();
       _startGateway();
     } else {
       _stage = AppStage.loggedOut;
@@ -88,11 +97,13 @@ class AppController extends ChangeNotifier {
     required String password,
     String? displayName,
   }) async {
-    return _authenticate(() => api.register(
-          username: username,
-          password: password,
-          displayName: displayName,
-        ));
+    return _authenticate(
+      () => api.register(
+        username: username,
+        password: password,
+        displayName: displayName,
+      ),
+    );
   }
 
   Future<bool> _authenticate(Future<AuthSession> Function() action) async {
@@ -105,6 +116,7 @@ class AppController extends ChangeNotifier {
       _user = session.user;
       _stage = AppStage.ready;
       await _loadGuilds();
+      await _loadDms();
       _startGateway();
       return true;
     } on ApiException catch (e) {
@@ -133,6 +145,8 @@ class AppController extends ChangeNotifier {
     _guild = null;
     _channels = const [];
     _channel = null;
+    _dms = const [];
+    _dm = null;
     _messages = const [];
     _members = const {};
     _error = null;
@@ -173,6 +187,7 @@ class AppController extends ChangeNotifier {
     _guild = guild;
     _channels = const [];
     _channel = null;
+    _dm = null;
     _messages = const [];
     _members = const {};
     _error = null;
@@ -183,7 +198,8 @@ class AppController extends ChangeNotifier {
       _channels = detail.channels;
       _members = await _loadMembers(guild.id);
 
-      final first = _firstOrNull(_channels.where((c) => c.isText)) ??
+      final first =
+          _firstOrNull(_channels.where((c) => c.isText)) ??
           _firstOrNull(_channels.where((c) => c.isVoice));
 
       notifyListeners();
@@ -199,6 +215,7 @@ class AppController extends ChangeNotifier {
 
   Future<void> selectChannel(Channel channel) async {
     _channel = channel;
+    _dm = null;
     _messages = const [];
     _hasMore = true;
     _error = null;
@@ -207,6 +224,69 @@ class AppController extends ChangeNotifier {
     if (channel.isText) {
       await _loadMessages(reset: true);
     }
+  }
+
+  /// Загружает список личных каналов. Ошибка не критична: остальной UI живёт.
+  Future<void> _loadDms() async {
+    try {
+      _dms = await api.listDms();
+      notifyListeners();
+    } catch (_) {
+      // Личные каналы появятся при следующем заходе.
+    }
+  }
+
+  /// Открывает диалог с участником сервера (или создаёт его).
+  Future<bool> startDm(String userId) async {
+    _busy = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      final created = await api.openDm(userId);
+      _dms = await api.listDms();
+
+      final dm = _dms.firstWhere(
+        (item) => item.id == created.id,
+        orElse: () => created,
+      );
+      await selectDm(dm);
+      return true;
+    } catch (e) {
+      _error = _describe(e);
+      return false;
+    } finally {
+      _busy = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> selectDm(DmChannel dm) async {
+    _dm = dm;
+    _channel = Channel(
+      id: dm.id,
+      name: dm.title(_user?.id ?? ''),
+      type: dm.type,
+    );
+
+    // Имена собеседников нужны ленте: диалог может быть с человеком,
+    // которого нет в текущем сервере.
+    final members = {..._members};
+    for (final participant in dm.recipients) {
+      members[participant.userId] = GuildMember(
+        userId: participant.userId,
+        username: participant.username,
+        displayName: participant.displayName,
+      );
+    }
+    _members = members;
+
+    _messages = const [];
+    _hasMore = true;
+    _error = null;
+    notifyListeners();
+
+    await _loadMessages(reset: true);
   }
 
   Future<void> _loadMessages({required bool reset}) async {
@@ -304,11 +384,7 @@ class AppController extends ChangeNotifier {
         sizeBytes: bytes.length,
       );
 
-      await api.uploadAttachment(
-        presign,
-        bytes,
-        contentType: contentType,
-      );
+      await api.uploadAttachment(presign, bytes, contentType: contentType);
 
       final pending = PendingAttachment(
         storageKey: presign.storageKey,
@@ -350,7 +426,8 @@ class AppController extends ChangeNotifier {
       _channels = detail.channels;
       _members = await _loadMembers(detail.guild.id);
 
-      final first = _firstOrNull(_channels.where((c) => c.isText)) ??
+      final first =
+          _firstOrNull(_channels.where((c) => c.isText)) ??
           _firstOrNull(_channels.where((c) => c.isVoice));
 
       notifyListeners();
@@ -389,12 +466,14 @@ class AppController extends ChangeNotifier {
 
   Future<void> joinVoice(Channel channel) async {
     _channel = channel;
-    _messages = const [];
     notifyListeners();
     await voice.join(channel.id);
   }
 
-  Future<void> leaveVoice() => voice.leave();
+  Future<void> leaveVoice() async {
+    await voice.leave();
+    notifyListeners();
+  }
 
   void clearError() {
     _error = null;

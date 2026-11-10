@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Nemanc123/voxnica/internal/chat"
+	"github.com/Nemanc123/voxnica/internal/dm"
 	"github.com/Nemanc123/voxnica/internal/guild"
 	"github.com/Nemanc123/voxnica/internal/perms"
 	"github.com/Nemanc123/voxnica/internal/store"
@@ -22,9 +23,11 @@ import (
 type env struct {
 	service   *chat.Service
 	guilds    *guild.Service
+	dm        *dm.Service
 	store     *store.Store
 	owner     string
 	member    string
+	stranger  string
 	guildID   string
 	channelID string
 }
@@ -54,10 +57,12 @@ func newEnv(t *testing.T) env {
 
 	st := store.New(tx)
 	gs := guild.NewService(st)
-	svc := chat.NewService(st, gs, nil)
+	dmSvc := dm.NewService(st)
+	svc := chat.NewService(st, gs, nil).WithDM(dmSvc)
 
 	owner := makeUser(t, ctx, st)
 	member := makeUser(t, ctx, st)
+	stranger := makeUser(t, ctx, st)
 
 	detail, err := gs.CreateGuild(ctx, owner, "Тестовый сервер")
 	if err != nil {
@@ -80,9 +85,11 @@ func newEnv(t *testing.T) env {
 	return env{
 		service:   svc,
 		guilds:    gs,
+		dm:        dmSvc,
 		store:     st,
 		owner:     owner,
 		member:    member,
+		stranger:  stranger,
 		guildID:   detail.Guild.ID,
 		channelID: channelID,
 	}

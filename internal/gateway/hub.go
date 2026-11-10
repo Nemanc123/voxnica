@@ -31,6 +31,7 @@ type PermissionFilter interface {
 type Hub struct {
 	mu      sync.RWMutex
 	byGuild map[string]map[*Session]struct{}
+	byUser  map[string]map[*Session]struct{}
 	clients map[*Session]*Client // отсутствие = офлайн
 	online  map[string]int       // userID → число активных соединений
 	filter  PermissionFilter
@@ -39,6 +40,7 @@ type Hub struct {
 func NewHub() *Hub {
 	return &Hub{
 		byGuild: make(map[string]map[*Session]struct{}),
+		byUser:  make(map[string]map[*Session]struct{}),
 		clients: make(map[*Session]*Client),
 		online:  make(map[string]int),
 	}
@@ -62,6 +64,10 @@ func (h *Hub) Attach(session *Session, client *Client) bool {
 		}
 		h.byGuild[guildID][session] = struct{}{}
 	}
+	if h.byUser[session.UserID] == nil {
+		h.byUser[session.UserID] = make(map[*Session]struct{})
+	}
+	h.byUser[session.UserID][session] = struct{}{}
 	h.clients[session] = client
 
 	becameOnline := h.online[session.UserID] == 0
@@ -109,6 +115,12 @@ func (h *Hub) Drop(session *Session) {
 			if len(subscribers) == 0 {
 				delete(h.byGuild, guildID)
 			}
+		}
+	}
+	if subscribers, ok := h.byUser[session.UserID]; ok {
+		delete(subscribers, session)
+		if len(subscribers) == 0 {
+			delete(h.byUser, session.UserID)
 		}
 	}
 }
@@ -166,7 +178,38 @@ func (h *Hub) Publish(ctx context.Context, guildID string, event chat.Event) {
 		client, online := h.clients[session]
 		h.mu.RUnlock()
 
-		if online {
+		if online && client != nil {
+			client.push(payload)
+		}
+	}
+}
+
+// PublishToUsers доставляет событие личного канала конкретным пользователям.
+//
+// Фильтр прав здесь не нужен: получатели уже выбраны по channel_recipients,
+// а сессия подписана на пользователя, а не на гильдию. Как и Publish, пишет
+// в буфер каждой сессии — RESUME догонит событие после переподключения.
+func (h *Hub) PublishToUsers(ctx context.Context, userIDs []string, eventType string, data any) {
+	h.mu.RLock()
+	sessions := make([]*Session, 0, len(userIDs))
+	for _, userID := range userIDs {
+		for session := range h.byUser[userID] {
+			sessions = append(sessions, session)
+		}
+	}
+	h.mu.RUnlock()
+
+	for _, session := range sessions {
+		payload, err := session.appendDispatch(eventType, data)
+		if err != nil {
+			continue
+		}
+
+		h.mu.RLock()
+		client, online := h.clients[session]
+		h.mu.RUnlock()
+
+		if online && client != nil {
 			client.push(payload)
 		}
 	}

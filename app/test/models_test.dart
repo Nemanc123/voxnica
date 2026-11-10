@@ -5,11 +5,7 @@ import 'package:voxnica/api/models.dart';
 void main() {
   test('AuthSession разбирает пользователя и срок токена', () {
     final session = AuthSession.fromJson({
-      'user': {
-        'id': 'u1',
-        'username': 'alice',
-        'display_name': 'Алиса',
-      },
+      'user': {'id': 'u1', 'username': 'alice', 'display_name': 'Алиса'},
       'access_token': 'a',
       'refresh_token': 'r',
       'expires_in': 900,
@@ -74,5 +70,19 @@ void main() {
 
     expect(withNickname.name, 'Лиса');
     expect(withoutNickname.name, 'Боб');
+  });
+
+  test('DmChannel берёт имя собеседника, а не своё', () {
+    final dm = DmChannel.fromJson({
+      'id': 'd1',
+      'type': 'dm',
+      'recipients': [
+        {'user_id': 'me', 'username': 'me'},
+        {'user_id': 'other', 'username': 'bob', 'display_name': 'Боб'},
+      ],
+    });
+
+    expect(dm.title('me'), 'Боб');
+    expect(dm.title('other'), 'me');
   });
 }

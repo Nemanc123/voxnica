@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/Nemanc123/voxnica/internal/dm"
 	"github.com/Nemanc123/voxnica/internal/guild"
 	"github.com/Nemanc123/voxnica/internal/perms"
 	"github.com/Nemanc123/voxnica/internal/store"
@@ -30,6 +31,11 @@ type Publisher interface {
 	PublishVoice(ctx context.Context, guildID string, event Event)
 }
 
+// UserPublisher — адресная доставка событий личного канала.
+type UserPublisher interface {
+	PublishToUsers(ctx context.Context, userIDs []string, eventType string, data any)
+}
+
 // JoinResult — всё, что нужно клиенту, чтобы подключиться к комнате.
 type JoinResult struct {
 	Token          string `json:"token"`
@@ -45,6 +51,7 @@ type JoinResult struct {
 type Service struct {
 	store  *store.Store
 	guild  *guild.Service
+	dm     *dm.Service
 	issuer TokenIssuer
 	url    string
 	pub    Publisher
@@ -52,6 +59,12 @@ type Service struct {
 
 func NewService(st *store.Store, gs *guild.Service, issuer TokenIssuer, url string, pub Publisher) *Service {
 	return &Service{store: st, guild: gs, issuer: issuer, url: url, pub: pub}
+}
+
+// WithDM включает голос в личных каналах.
+func (s *Service) WithDM(d *dm.Service) *Service {
+	s.dm = d
+	return s
 }
 
 // Join проверяет права и выдаёт токен на вход в голосовой канал.
@@ -64,7 +77,7 @@ func (s *Service) Join(ctx context.Context, userID, channelID string) (JoinResul
 		return JoinResult{}, err
 	}
 
-	if channel.Type != "voice" {
+	if !isVoiceType(channel.Type) {
 		return JoinResult{}, fmt.Errorf("%w: это не голосовой канал", ErrValidation)
 	}
 
@@ -116,7 +129,7 @@ func (s *Service) SetState(ctx context.Context, userID, channelID string, selfMu
 	if err != nil {
 		return err
 	}
-	if channel.Type != "voice" {
+	if !isVoiceType(channel.Type) {
 		return fmt.Errorf("%w: это не голосовой канал", ErrValidation)
 	}
 
@@ -124,7 +137,7 @@ func (s *Service) SetState(ctx context.Context, userID, channelID string, selfMu
 		return err
 	}
 
-	s.publish(ctx, channel.GuildID, Event{
+	s.publish(ctx, channel, Event{
 		Type:      "VOICE_STATE_UPDATE",
 		ChannelID: channelID,
 		Data: map[string]any{
@@ -145,7 +158,7 @@ func (s *Service) Participants(ctx context.Context, userID, channelID string) ([
 	if err != nil {
 		return nil, err
 	}
-	if channel.Type != "voice" {
+	if !isVoiceType(channel.Type) {
 		return nil, fmt.Errorf("%w: это не голосовой канал", ErrValidation)
 	}
 	return s.store.VoiceParticipants(ctx, channelID)
@@ -201,7 +214,7 @@ func (s *Service) participantJoined(ctx context.Context, channelID, userID strin
 		return err
 	}
 
-	s.publish(ctx, channel.GuildID, Event{
+	s.publish(ctx, *channel, Event{
 		Type:      "VOICE_STATE_UPDATE",
 		ChannelID: channelID,
 		Data: map[string]any{
@@ -226,7 +239,7 @@ func (s *Service) participantLeft(ctx context.Context, channelID, userID string)
 		return err
 	}
 
-	s.publish(ctx, channel.GuildID, Event{
+	s.publish(ctx, *channel, Event{
 		Type:      "VOICE_STATE_UPDATE",
 		ChannelID: channelID,
 		Data: map[string]any{
@@ -253,7 +266,7 @@ func (s *Service) trackMuted(ctx context.Context, channelID, userID string, mute
 		return err
 	}
 
-	s.publish(ctx, channel.GuildID, Event{
+	s.publish(ctx, *channel, Event{
 		Type:      "VOICE_STATE_UPDATE",
 		ChannelID: channelID,
 		Data: map[string]any{
@@ -285,7 +298,7 @@ func (s *Service) roomFinished(ctx context.Context, channelID string) error {
 	}
 
 	for _, p := range participants {
-		s.publish(ctx, channel.GuildID, Event{
+		s.publish(ctx, *channel, Event{
 			Type:      "VOICE_STATE_UPDATE",
 			ChannelID: channelID,
 			Data: map[string]any{
@@ -300,6 +313,12 @@ func (s *Service) roomFinished(ctx context.Context, channelID string) error {
 
 // voiceChannel возвращает канал, если он существует и голосовой.
 // nil без ошибки — «не наш случай»: такой вебхук можно игнорировать.
+// isVoiceType — каналы, где можно созваниваться. У личного канала нет
+// отдельного голосового: звонок идёт в том же DM-канале.
+func isVoiceType(t string) bool {
+	return t == "voice" || t == "dm" || t == "group_dm"
+}
+
 func (s *Service) voiceChannel(ctx context.Context, channelID string) (*store.Channel, error) {
 	channel, err := s.store.ChannelByID(ctx, channelID)
 	if err != nil {
@@ -308,7 +327,7 @@ func (s *Service) voiceChannel(ctx context.Context, channelID string) (*store.Ch
 		}
 		return nil, err
 	}
-	if channel.Type != "voice" {
+	if !isVoiceType(channel.Type) {
 		return nil, nil
 	}
 	return &channel, nil
@@ -319,8 +338,23 @@ func (s *Service) authorize(ctx context.Context, userID, channelID string, want 
 	if err != nil {
 		return store.Channel{}, 0, err
 	}
+
+	// Личный канал: доступ есть ровно у получателей, права фиксированы.
 	if channel.GuildID == nil {
-		return store.Channel{}, 0, fmt.Errorf("%w: личные каналы пока не поддерживаются", ErrValidation)
+		if s.dm == nil {
+			return store.Channel{}, 0, fmt.Errorf("%w: личные каналы отключены", ErrForbidden)
+		}
+		p, ok, err := s.dm.Access(ctx, userID, channel.ID)
+		if err != nil {
+			return store.Channel{}, 0, err
+		}
+		if !ok {
+			return store.Channel{}, 0, fmt.Errorf("%w: вы не участник этого диалога", ErrForbidden)
+		}
+		if !p.Has(want) {
+			return store.Channel{}, 0, fmt.Errorf("%w: нужно право %b", ErrForbidden, int64(want))
+		}
+		return channel, p, nil
 	}
 
 	member, err := s.store.MemberExists(ctx, *channel.GuildID, userID)
@@ -342,9 +376,24 @@ func (s *Service) authorize(ctx context.Context, userID, channelID string, want 
 	return channel, p, nil
 }
 
-func (s *Service) publish(ctx context.Context, guildID *string, event Event) {
-	if s.pub == nil || guildID == nil {
+func (s *Service) publish(ctx context.Context, channel store.Channel, event Event) {
+	if s.pub == nil {
 		return
 	}
-	s.pub.PublishVoice(ctx, *guildID, event)
+
+	if channel.GuildID != nil {
+		s.pub.PublishVoice(ctx, *channel.GuildID, event)
+		return
+	}
+
+	if s.dm == nil {
+		return
+	}
+	recipients, err := s.dm.RecipientIDs(ctx, channel.ID)
+	if err != nil {
+		return
+	}
+	if up, ok := s.pub.(UserPublisher); ok {
+		up.PublishToUsers(ctx, recipients, event.Type, event.Data)
+	}
 }

@@ -27,13 +27,10 @@ class ApiException implements Exception {
 /// через refresh и повторить запрос. Параллельные запросы ждут один refresh,
 /// а не запускают пять.
 class ApiClient {
-  ApiClient({
-    String? baseUrl,
-    http.Client? client,
-    SessionStore? store,
-  })  : baseUrl = (baseUrl ?? apiBaseUrl).replaceFirst(RegExp(r'/$'), ''),
-        _http = client ?? http.Client(),
-        _store = store ?? SessionStore();
+  ApiClient({String? baseUrl, http.Client? client, SessionStore? store})
+    : baseUrl = (baseUrl ?? apiBaseUrl).replaceFirst(RegExp(r'/$'), ''),
+      _http = client ?? http.Client(),
+      _store = store ?? SessionStore();
 
   final String baseUrl;
   final http.Client _http;
@@ -58,7 +55,8 @@ class ApiClient {
     }
 
     final expiresAt = session.expiresAt;
-    final soon = expiresAt != null &&
+    final soon =
+        expiresAt != null &&
         DateTime.now().isAfter(expiresAt.subtract(const Duration(seconds: 30)));
 
     if (soon && await _refresh()) {
@@ -85,10 +83,7 @@ class ApiClient {
     required String password,
     String? displayName,
   }) async {
-    final body = <String, dynamic>{
-      'username': username,
-      'password': password,
-    };
+    final body = <String, dynamic>{'username': username, 'password': password};
     if (displayName != null && displayName.trim().isNotEmpty) {
       body['display_name'] = displayName.trim();
     }
@@ -145,10 +140,18 @@ class ApiClient {
   Future<List<GuildMember>> members(String guildId) async {
     final json = await _request('GET', '/guilds/$guildId/members');
     final raw = json?['members'] as List<dynamic>? ?? [];
-    return raw
-        .cast<Map<String, dynamic>>()
-        .map(GuildMember.fromJson)
-        .toList();
+    return raw.cast<Map<String, dynamic>>().map(GuildMember.fromJson).toList();
+  }
+
+  Future<List<DmChannel>> listDms() async {
+    final json = await _request('GET', '/dms');
+    final raw = json?['channels'] as List<dynamic>? ?? [];
+    return raw.cast<Map<String, dynamic>>().map(DmChannel.fromJson).toList();
+  }
+
+  Future<DmChannel> openDm(String userId) async {
+    final json = await _request('POST', '/dms', body: {'user_id': userId});
+    return DmChannel.fromJson(json!);
   }
 
   Future<List<Message>> messages(
@@ -224,11 +227,7 @@ class ApiClient {
   }
 
   Future<void> markRead(String channelId, int seq) async {
-    await _request(
-      'POST',
-      '/channels/$channelId/read',
-      body: {'seq': seq},
-    );
+    await _request('POST', '/channels/$channelId/read', body: {'seq': seq});
   }
 
   Future<VoiceJoinInfo> voiceJoin(String channelId) async {

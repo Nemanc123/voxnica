@@ -17,8 +17,15 @@ import (
 )
 
 type recorder struct {
-	mu     sync.Mutex
-	events []chat.Event
+	mu         sync.Mutex
+	events     []chat.Event
+	userEvents []recordedUserEvent
+}
+
+type recordedUserEvent struct {
+	users []string
+	kind  string
+	data  any
 }
 
 func (r *recorder) Publish(_ context.Context, _ string, event chat.Event) {
@@ -27,10 +34,22 @@ func (r *recorder) Publish(_ context.Context, _ string, event chat.Event) {
 	r.events = append(r.events, event)
 }
 
+func (r *recorder) PublishToUsers(_ context.Context, userIDs []string, eventType string, data any) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.userEvents = append(r.userEvents, recordedUserEvent{users: userIDs, kind: eventType, data: data})
+}
+
 func (r *recorder) count() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return len(r.events)
+}
+
+func (r *recorder) userCount() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.userEvents)
 }
 
 func newClient(t *testing.T) *redis.Client {
@@ -92,6 +111,30 @@ func TestEventReachesOtherNode(t *testing.T) {
 	}
 	if !waitFor(t, 3*time.Second, func() bool { return localB.count() == 1 }) {
 		t.Fatalf("другой узел получил %d событий, ожидали 1", localB.count())
+	}
+}
+
+func TestUserEventReachesOtherNode(t *testing.T) {
+	client := newClient(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	localA := &recorder{}
+	localB := &recorder{}
+
+	publisherA := fanout.NewPublisher(localA, client, "node-a")
+	subscriberB := fanout.NewSubscriber(localB, client, "node-b")
+	go subscriberB.Run(ctx)
+
+	time.Sleep(300 * time.Millisecond)
+
+	publisherA.PublishToUsers(ctx, []string{"user-1"}, "MESSAGE_CREATE", map[string]string{"id": "m1"})
+
+	if localA.userCount() != 1 {
+		t.Fatalf("локальный узел получил %d личных событий, ожидали 1", localA.userCount())
+	}
+	if !waitFor(t, 3*time.Second, func() bool { return localB.userCount() == 1 }) {
+		t.Fatalf("другой узел получил %d личных событий, ожидали 1", localB.userCount())
 	}
 }
 

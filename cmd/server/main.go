@@ -27,6 +27,7 @@ import (
 	"github.com/Nemanc123/voxnica/internal/chat"
 	"github.com/Nemanc123/voxnica/internal/config"
 	"github.com/Nemanc123/voxnica/internal/db"
+	"github.com/Nemanc123/voxnica/internal/dm"
 	"github.com/Nemanc123/voxnica/internal/fanout"
 	"github.com/Nemanc123/voxnica/internal/gateway"
 	"github.com/Nemanc123/voxnica/internal/guild"
@@ -48,6 +49,13 @@ func (p voicePublisher) PublishVoice(ctx context.Context, guildID string, event 
 		ChannelID: event.ChannelID,
 		Data:      event.Data,
 	})
+}
+
+// PublishToUsers — голосовые события личного канала идут адресно.
+func (p voicePublisher) PublishToUsers(ctx context.Context, userIDs []string, eventType string, data any) {
+	if up, ok := p.pub.(chat.UserPublisher); ok {
+		up.PublishToUsers(ctx, userIDs, eventType, data)
+	}
 }
 
 func main() {
@@ -86,6 +94,9 @@ func run() error {
 	guildService := guild.NewService(store.NewWithPool(pool))
 	guildHandlers := api.NewGuildHandlers(guildService)
 
+	dmService := dm.NewService(store.NewWithPool(pool))
+	dmHandlers := api.NewDMHandlers(dmService)
+
 	hub := gateway.NewHub()
 	hub.SetFilter(gateway.NewCachedFilter(guildService, 10*time.Second))
 
@@ -100,7 +111,7 @@ func run() error {
 		go fanout.NewSubscriber(hub, rdb, nodeID).Run(ctx)
 	}
 
-	chatService := chat.NewService(store.NewWithPool(pool), guildService, publisher)
+	chatService := chat.NewService(store.NewWithPool(pool), guildService, publisher).WithDM(dmService)
 
 	// Хранилище файлов необязательно: без него сервер работает, но вложения
 	// отвечают ошибкой «хранилище не настроено».
@@ -134,7 +145,7 @@ func run() error {
 		},
 		cfg.LiveKitURL,
 		voicePublisher{pub: publisher},
-	)
+	).WithDM(dmService)
 
 	srv := &http.Server{
 		Addr: cfg.HTTPAddr,
@@ -146,6 +157,7 @@ func run() error {
 			Presence: presenceHandlers,
 			Gateway:  gatewayHandler,
 			Voice:    api.NewVoiceHandlers(voiceService),
+			DM:       dmHandlers,
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,

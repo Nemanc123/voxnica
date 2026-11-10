@@ -22,7 +22,10 @@ import (
 	"github.com/Nemanc123/voxnica/internal/chat"
 )
 
-const ChannelPrefix = "voxnica:guild:"
+const (
+	ChannelPrefix = "voxnica:guild:"
+	UserPrefix    = "voxnica:user:"
+)
 
 const publishTimeout = 2 * time.Second
 
@@ -31,9 +34,20 @@ type Local interface {
 	Publish(ctx context.Context, guildID string, event chat.Event)
 }
 
+// UserLocal — адресная доставка личных событий.
+type UserLocal interface {
+	PublishToUsers(ctx context.Context, userIDs []string, eventType string, data any)
+}
+
 type wireEvent struct {
 	NodeID string     `json:"node_id"`
 	Event  chat.Event `json:"event"`
+}
+
+type wireUserEvent struct {
+	NodeID string          `json:"node_id"`
+	Type   string          `json:"type"`
+	Data   json.RawMessage `json:"data"`
 }
 
 type Publisher struct {
@@ -67,6 +81,37 @@ func (p *Publisher) Publish(ctx context.Context, guildID string, event chat.Even
 	}
 }
 
+// PublishToUsers — адресная доставка личных событий. В отличие от гильдии,
+// публикуем в канал каждого получателя: узел-подписчик знает user_id и
+// отдаёт событие только его сессиям.
+func (p *Publisher) PublishToUsers(ctx context.Context, userIDs []string, eventType string, data any) {
+	if local, ok := p.local.(UserLocal); ok {
+		local.PublishToUsers(ctx, userIDs, eventType, data)
+	}
+
+	raw, err := json.Marshal(data)
+	if err != nil {
+		slog.Error("fanout: кодирование личного события", "err", err, "type", eventType)
+		return
+	}
+
+	payload, err := json.Marshal(wireUserEvent{NodeID: p.nodeID, Type: eventType, Data: raw})
+	if err != nil {
+		slog.Error("fanout: кодирование личного события", "err", err, "type", eventType)
+		return
+	}
+
+	pubCtx, cancel := context.WithTimeout(ctx, publishTimeout)
+	defer cancel()
+
+	for _, userID := range userIDs {
+		if err := p.rdb.Publish(pubCtx, UserPrefix+userID, payload).Err(); err != nil {
+			slog.Warn("fanout: публикация личного события не удалась",
+				"err", err, "user_id", userID)
+		}
+	}
+}
+
 type Subscriber struct {
 	local  Local
 	rdb    *redis.Client
@@ -79,10 +124,10 @@ func NewSubscriber(local Local, rdb *redis.Client, nodeID string) *Subscriber {
 
 // Run блокируется до отмены контекста.
 func (s *Subscriber) Run(ctx context.Context) {
-	sub := s.rdb.PSubscribe(ctx, ChannelPrefix+"*")
+	sub := s.rdb.PSubscribe(ctx, ChannelPrefix+"*", UserPrefix+"*")
 	defer func() { _ = sub.Close() }()
 
-	slog.Info("fanout: подписка на события гильдий", "node_id", s.nodeID)
+	slog.Info("fanout: подписка на события гильдий и личные события", "node_id", s.nodeID)
 
 	for {
 		select {
@@ -91,6 +136,23 @@ func (s *Subscriber) Run(ctx context.Context) {
 		case msg, ok := <-sub.Channel():
 			if !ok {
 				return
+			}
+
+			if strings.HasPrefix(msg.Channel, UserPrefix) {
+				var w wireUserEvent
+				if err := json.Unmarshal([]byte(msg.Payload), &w); err != nil {
+					slog.Warn("fanout: неразборчивое личное сообщение", "err", err)
+					continue
+				}
+				if w.NodeID == s.nodeID {
+					continue
+				}
+
+				userID := strings.TrimPrefix(msg.Channel, UserPrefix)
+				if local, ok := s.local.(UserLocal); ok {
+					local.PublishToUsers(ctx, []string{userID}, w.Type, w.Data)
+				}
+				continue
 			}
 
 			var w wireEvent

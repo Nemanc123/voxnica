@@ -29,6 +29,7 @@ class HomeScreen extends StatelessWidget {
                 child: _ChannelSidebar(
                   controller: controller,
                   onOpenChannel: controller.selectChannel,
+                  onOpenDm: controller.selectDm,
                 ),
               ),
               const VerticalDivider(width: 1, color: Color(0xFF1E1F22)),
@@ -39,6 +40,15 @@ class HomeScreen extends StatelessWidget {
                   controller: controller,
                   onOpenChannel: (channel) async {
                     await controller.selectChannel(channel);
+                    if (!context.mounted) return;
+                    await Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => ChannelScreen(controller: controller),
+                      ),
+                    );
+                  },
+                  onOpenDm: (dm) async {
+                    await controller.selectDm(dm);
                     if (!context.mounted) return;
                     await Navigator.of(context).push(
                       MaterialPageRoute<void>(
@@ -137,10 +147,12 @@ class _ChannelSidebar extends StatelessWidget {
   const _ChannelSidebar({
     required this.controller,
     required this.onOpenChannel,
+    required this.onOpenDm,
   });
 
   final AppController controller;
   final Future<void> Function(Channel) onOpenChannel;
+  final Future<void> Function(DmChannel) onOpenDm;
 
   @override
   Widget build(BuildContext context) {
@@ -176,39 +188,69 @@ class _ChannelSidebar extends StatelessWidget {
             ),
           ),
           Expanded(
-            child: guild == null
-                ? const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(16),
-                      child: Text(
-                        'Создайте сервер кнопкой «+» слева',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: kTextMuted),
-                      ),
+            child: ListView(
+              children: [
+                Row(
+                  children: [
+                    const Expanded(child: _GroupLabel('ЛИЧНЫЕ СООБЩЕНИЯ')),
+                    IconButton(
+                      tooltip: 'Новый диалог',
+                      onPressed: () => _createDm(context),
+                      icon: const Icon(Icons.person_add_alt, size: 18),
+                    ),
+                  ],
+                ),
+                if (controller.dms.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(12, 0, 12, 8),
+                    child: Text(
+                      'Нажмите +, чтобы написать участнику сервера',
+                      style: TextStyle(fontSize: 11, color: kTextMuted),
                     ),
                   )
-                : ListView(
-                    children: [
-                      if (controller.textChannels.isNotEmpty)
-                        const _GroupLabel('ТЕКСТОВЫЕ КАНАЛЫ'),
-                      ...controller.textChannels.map(
-                        (channel) => _ChannelTile(
-                          channel: channel,
-                          selected: controller.channel?.id == channel.id,
-                          onTap: () => onOpenChannel(channel),
-                        ),
-                      ),
-                      if (controller.voiceChannels.isNotEmpty)
-                        const _GroupLabel('ГОЛОСОВЫЕ КАНАЛЫ'),
-                      ...controller.voiceChannels.map(
-                        (channel) => _ChannelTile(
-                          channel: channel,
-                          selected: controller.channel?.id == channel.id,
-                          onTap: () => onOpenChannel(channel),
-                        ),
-                      ),
-                    ],
+                else
+                  ...controller.dms.map(
+                    (dm) => _DmTile(
+                      dm: dm,
+                      selfId: controller.user?.id ?? '',
+                      selected: controller.dm?.id == dm.id,
+                      onTap: () => onOpenDm(dm),
+                    ),
                   ),
+                if (guild != null) ...[
+                  if (controller.textChannels.isNotEmpty)
+                    const _GroupLabel('ТЕКСТОВЫЕ КАНАЛЫ'),
+                  ...controller.textChannels.map(
+                    (channel) => _ChannelTile(
+                      channel: channel,
+                      selected:
+                          controller.dm == null &&
+                          controller.channel?.id == channel.id,
+                      onTap: () => onOpenChannel(channel),
+                    ),
+                  ),
+                  if (controller.voiceChannels.isNotEmpty)
+                    const _GroupLabel('ГОЛОСОВЫЕ КАНАЛЫ'),
+                  ...controller.voiceChannels.map(
+                    (channel) => _ChannelTile(
+                      channel: channel,
+                      selected:
+                          controller.dm == null &&
+                          controller.channel?.id == channel.id,
+                      onTap: () => onOpenChannel(channel),
+                    ),
+                  ),
+                ] else
+                  const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text(
+                      'Создайте сервер кнопкой «+» слева',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: kTextMuted),
+                    ),
+                  ),
+              ],
+            ),
           ),
           _UserFooter(controller: controller),
         ],
@@ -224,6 +266,24 @@ class _ChannelSidebar extends StatelessWidget {
     if (result == null) return;
 
     final ok = await controller.createChannel(result.name, result.type);
+    if (!context.mounted) return;
+    if (!ok && controller.error != null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(controller.error!)));
+    }
+  }
+
+  Future<void> _createDm(BuildContext context) async {
+    final member = await showDialog<GuildMember>(
+      context: context,
+      builder: (context) => _NewDmDialog(
+        members: controller.members,
+        selfId: controller.user?.id ?? '',
+      ),
+    );
+    if (member == null) return;
+
+    final ok = await controller.startDm(member.userId);
     if (!context.mounted) return;
     if (!ok && controller.error != null) {
       ScaffoldMessenger.of(context)
@@ -288,6 +348,55 @@ class _ChannelTile extends StatelessWidget {
                 Expanded(
                   child: Text(
                     channel.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: selected ? kTextPrimary : kTextMuted,
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DmTile extends StatelessWidget {
+  const _DmTile({
+    required this.dm,
+    required this.selfId,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final DmChannel dm;
+  final String selfId;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      child: Material(
+        color: selected ? const Color(0xFF404249) : Colors.transparent,
+        borderRadius: BorderRadius.circular(6),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(6),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            child: Row(
+              children: [
+                const Icon(Icons.person, size: 18, color: kTextMuted),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    dm.title(selfId),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -390,6 +499,21 @@ class ChannelPane extends StatelessWidget {
       );
     }
 
+    if (channel.isDm) {
+      return ListenableBuilder(
+        listenable: controller.voice,
+        builder: (context, _) {
+          final inCall =
+              controller.voice.channelId == channel.id &&
+              controller.voice.connected;
+          if (inCall) {
+            return _VoicePanel(controller: controller, channel: channel);
+          }
+          return _TextChannel(controller: controller, channel: channel);
+        },
+      );
+    }
+
     if (channel.isVoice) {
       return _VoicePanel(controller: controller, channel: channel);
     }
@@ -485,11 +609,20 @@ class _TextChannelState extends State<_TextChannel> {
       child: Column(
         children: [
           _ChannelHeader(
-            icon: Icons.tag,
+            icon: widget.channel.isDm ? Icons.person : Icons.tag,
             title: widget.channel.name,
-            subtitle: controller.gatewayStatus == GatewayStatus.connected
+            subtitle: widget.channel.isDm
+                ? 'личные сообщения'
+                : controller.gatewayStatus == GatewayStatus.connected
                 ? 'живые сообщения'
                 : 'переподключение…',
+            trailing: widget.channel.isDm
+                ? IconButton(
+                    tooltip: 'Позвонить',
+                    onPressed: () => controller.joinVoice(widget.channel),
+                    icon: const Icon(Icons.call, size: 20),
+                  )
+                : null,
           ),
           Expanded(
             child: messages.isEmpty
@@ -549,7 +682,9 @@ class _TextChannelState extends State<_TextChannel> {
                     maxLines: 5,
                     textInputAction: TextInputAction.newline,
                     decoration: InputDecoration(
-                      hintText: 'Написать в #${widget.channel.name}',
+                      hintText: widget.channel.isDm
+                          ? 'Написать в личные сообщения'
+                          : 'Написать в #${widget.channel.name}',
                     ),
                     onSubmitted: (_) => _send(),
                   ),
@@ -1028,11 +1163,13 @@ class _ChannelHeader extends StatelessWidget {
     required this.icon,
     required this.title,
     required this.subtitle,
+    this.trailing,
   });
 
   final IconData icon;
   final String title;
   final String subtitle;
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -1046,14 +1183,77 @@ class _ChannelHeader extends StatelessWidget {
         children: [
           Icon(icon, size: 20, color: kTextMuted),
           const SizedBox(width: 8),
-          Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+          Expanded(
+            child: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ),
           const SizedBox(width: 10),
           Text(
             subtitle,
             style: const TextStyle(fontSize: 11, color: kTextMuted),
           ),
+          if (trailing != null) ...[const SizedBox(width: 8), trailing!],
         ],
       ),
+    );
+  }
+}
+
+class _NewDmDialog extends StatelessWidget {
+  const _NewDmDialog({required this.members, required this.selfId});
+
+  final List<GuildMember> members;
+  final String selfId;
+
+  @override
+  Widget build(BuildContext context) {
+    final others = members.where((m) => m.userId != selfId).toList();
+
+    return AlertDialog(
+      title: const Text('Новый диалог'),
+      content: SizedBox(
+        width: 320,
+        child: others.isEmpty
+            ? const Text(
+                'В текущем сервере больше никого нет. Пригласите участника '
+                'или выберите другой сервер.',
+                style: TextStyle(color: kTextMuted),
+              )
+            : ListView.builder(
+                shrinkWrap: true,
+                itemCount: others.length,
+                itemBuilder: (context, index) {
+                  final member = others[index];
+                  return ListTile(
+                    dense: true,
+                    leading: CircleAvatar(
+                      radius: 14,
+                      backgroundColor: kAccent,
+                      child: Text(
+                        member.name.substring(0, 1).toUpperCase(),
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                    title: Text(member.name),
+                    subtitle: Text(
+                      '@${member.username}',
+                      style: const TextStyle(fontSize: 11, color: kTextMuted),
+                    ),
+                    onTap: () => Navigator.of(context).pop(member),
+                  );
+                },
+              ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Отмена'),
+        ),
+      ],
     );
   }
 }

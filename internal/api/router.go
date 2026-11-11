@@ -101,6 +101,8 @@ func NewRouter(d Deps) http.Handler {
 			// Голос.
 			if d.Voice != nil {
 				r.Post("/channels/{channelID}/voice/join", d.Voice.Join)
+				r.Post("/channels/{channelID}/voice/invite", d.Voice.Invite)
+				r.Post("/channels/{channelID}/voice/decline", d.Voice.Decline)
 				r.Get("/channels/{channelID}/voice", d.Voice.Participants)
 				r.Patch("/channels/{channelID}/voice/state", d.Voice.SetState)
 			}

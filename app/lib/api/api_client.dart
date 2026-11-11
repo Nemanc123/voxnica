@@ -154,6 +154,14 @@ class ApiClient {
     return DmChannel.fromJson(json!);
   }
 
+  Future<void> inviteToCall(String channelId) async {
+    await _request('POST', '/channels/$channelId/voice/invite');
+  }
+
+  Future<void> declineCall(String channelId) async {
+    await _request('POST', '/channels/$channelId/voice/decline');
+  }
+
   Future<List<Message>> messages(
     String channelId, {
     int before = 0,

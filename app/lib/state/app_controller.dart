@@ -36,6 +36,11 @@ class AppController extends ChangeNotifier {
   bool _sending = false;
   bool _hasMore = true;
   String? _error;
+  IncomingCall? _incomingCall;
+  Timer? _incomingTimer;
+  Map<String, int> _dmUnread = {};
+  String? _callNotice;
+  DateTime _lastDmReload = DateTime.fromMillisecondsSinceEpoch(0);
 
   GatewayClient? _gateway;
   StreamSubscription<GatewayEvent>? _eventSub;
@@ -66,6 +71,9 @@ class AppController extends ChangeNotifier {
   bool get sending => _sending;
   bool get hasMore => _hasMore;
   String? get error => _error;
+  IncomingCall? get incomingCall => _incomingCall;
+  String? get callNotice => _callNotice;
+  int dmUnread(String channelId) => _dmUnread[channelId] ?? 0;
   GatewayStatus get gatewayStatus => _gatewayStatus;
 
   List<Channel> get textChannels => _channels.where((c) => c.isText).toList();
@@ -150,6 +158,10 @@ class AppController extends ChangeNotifier {
     _messages = const [];
     _members = const {};
     _error = null;
+    _incomingTimer?.cancel();
+    _incomingCall = null;
+    _dmUnread = {};
+    _callNotice = null;
     _gatewayStatus = GatewayStatus.disconnected;
     _stage = AppStage.loggedOut;
 
@@ -263,6 +275,7 @@ class AppController extends ChangeNotifier {
 
   Future<void> selectDm(DmChannel dm) async {
     _dm = dm;
+    _dmUnread.remove(dm.id);
     _channel = Channel(
       id: dm.id,
       name: dm.title(_user?.id ?? ''),
@@ -466,8 +479,65 @@ class AppController extends ChangeNotifier {
 
   Future<void> joinVoice(Channel channel) async {
     _channel = channel;
+    _callNotice = null;
     notifyListeners();
     await voice.join(channel.id);
+  }
+
+  /// Звонок в личный канал: сначала входим сами, потом звоним собеседнику.
+  Future<void> startDmCall(Channel channel) async {
+    await joinVoice(channel);
+    if (!voice.connected) return;
+
+    try {
+      await api.inviteToCall(channel.id);
+    } catch (_) {
+      // Собеседник не получит уведомление, но звонок уже идёт.
+    }
+  }
+
+  /// Принять входящий: открыть диалог и войти в ту же комнату.
+  Future<void> acceptIncomingCall() async {
+    final call = _incomingCall;
+    if (call == null) return;
+
+    _incomingTimer?.cancel();
+    _incomingCall = null;
+
+    var dm = _firstOrNull(_dms.where((item) => item.id == call.channelId));
+    if (dm == null) {
+      await _loadDms();
+      dm = _firstOrNull(_dms.where((item) => item.id == call.channelId));
+    }
+
+    if (dm != null) {
+      await selectDm(dm);
+    } else {
+      _channel = Channel(id: call.channelId, name: call.fromName, type: 'dm');
+      _dm = null;
+      _messages = const [];
+      notifyListeners();
+      await _loadMessages(reset: true);
+    }
+
+    await joinVoice(_channel!);
+    notifyListeners();
+  }
+
+  /// Отклонить входящий.
+  Future<void> declineIncomingCall() async {
+    final call = _incomingCall;
+    if (call == null) return;
+
+    _incomingTimer?.cancel();
+    _incomingCall = null;
+    notifyListeners();
+
+    try {
+      await api.declineCall(call.channelId);
+    } catch (_) {
+      // Звонящий просто не узнает об отказе.
+    }
   }
 
   Future<void> leaveVoice() async {
@@ -504,7 +574,54 @@ class AppController extends ChangeNotifier {
             if (message.channelId == _channel?.id) {
               _upsertMessage(message);
               _markRead();
+            } else {
+              final knownDm = _dms.any((item) => item.id == message.channelId);
+              if (knownDm) {
+                if (event.type == 'MESSAGE_CREATE' &&
+                    message.authorId != _user?.id) {
+                  _dmUnread[message.channelId] =
+                      dmUnread(message.channelId) + 1;
+                  notifyListeners();
+                }
+              } else if (event.type == 'MESSAGE_CREATE' &&
+                  !_channels.any((c) => c.id == message.channelId) &&
+                  DateTime.now().difference(_lastDmReload) >
+                      const Duration(seconds: 10)) {
+                // Возможно, это новый диалог: обновим список.
+                _lastDmReload = DateTime.now();
+                unawaited(_loadDms());
+              }
             }
+          }
+          break;
+        }
+      case 'CALL_INVITE':
+        {
+          final data = event.data;
+          if (data is Map<String, dynamic>) {
+            final call = IncomingCall.fromJson(data);
+            if (call.channelId.isEmpty) break;
+            if (voice.channelId == call.channelId && voice.connected) break;
+
+            _incomingCall = call;
+            _incomingTimer?.cancel();
+            _incomingTimer = Timer(const Duration(seconds: 30), () {
+              if (_incomingCall?.channelId == call.channelId) {
+                unawaited(declineIncomingCall());
+              }
+            });
+            notifyListeners();
+          }
+          break;
+        }
+      case 'CALL_DECLINE':
+        {
+          final data = event.data;
+          if (data is Map<String, dynamic> &&
+              data['channel_id'] == voice.channelId) {
+            final name = data['from_name'] as String? ?? 'Собеседник';
+            _callNotice = '$name отклонил вызов';
+            notifyListeners();
           }
           break;
         }
@@ -595,6 +712,7 @@ class AppController extends ChangeNotifier {
     final statusSub = _statusSub;
     final gateway = _gateway;
 
+    _incomingTimer?.cancel();
     if (eventSub != null) unawaited(eventSub.cancel());
     if (statusSub != null) unawaited(statusSub.cancel());
     if (gateway != null) unawaited(gateway.dispose());

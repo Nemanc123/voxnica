@@ -164,6 +164,71 @@ func (s *Service) Participants(ctx context.Context, userID, channelID string) ([
 	return s.store.VoiceParticipants(ctx, channelID)
 }
 
+// Invite звонит получателям личного канала. Событие адресное: в голосовом
+// канале сервера звонить не нужно — там видно, кто где.
+func (s *Service) Invite(ctx context.Context, userID, channelID string) error {
+	channel, _, err := s.authorize(ctx, userID, channelID, perms.Connect)
+	if err != nil {
+		return err
+	}
+	if channel.Type != "dm" && channel.Type != "group_dm" {
+		return fmt.Errorf("%w: звонить можно только в личный канал", ErrValidation)
+	}
+	return s.callEvent(ctx, userID, channel, "CALL_INVITE")
+}
+
+// Decline сообщает звонящему, что вызов отклонён.
+func (s *Service) Decline(ctx context.Context, userID, channelID string) error {
+	channel, _, err := s.authorize(ctx, userID, channelID, perms.Connect)
+	if err != nil {
+		return err
+	}
+	if channel.Type != "dm" && channel.Type != "group_dm" {
+		return fmt.Errorf("%w: отклонить можно только личный вызов", ErrValidation)
+	}
+	return s.callEvent(ctx, userID, channel, "CALL_DECLINE")
+}
+
+func (s *Service) callEvent(ctx context.Context, userID string, channel store.Channel, eventType string) error {
+	if s.dm == nil {
+		return fmt.Errorf("%w: личные каналы отключены", ErrForbidden)
+	}
+
+	recipients, err := s.dm.RecipientIDs(ctx, channel.ID)
+	if err != nil {
+		return err
+	}
+	targets := make([]string, 0, len(recipients))
+	for _, id := range recipients {
+		if id != userID {
+			targets = append(targets, id)
+		}
+	}
+	if len(targets) == 0 {
+		return nil
+	}
+
+	user, err := s.store.UserByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	name := user.Username
+	if user.DisplayName != nil && strings.TrimSpace(*user.DisplayName) != "" {
+		name = *user.DisplayName
+	}
+
+	up, ok := s.pub.(UserPublisher)
+	if !ok {
+		return nil
+	}
+	up.PublishToUsers(ctx, targets, eventType, map[string]any{
+		"channel_id":   channel.ID,
+		"from_user_id": user.ID,
+		"from_name":    name,
+	})
+	return nil
+}
+
 // HandleWebhook проверяет уведомление LiveKit и применяет его к базе.
 func (s *Service) HandleWebhook(ctx context.Context, rawToken string, body []byte) error {
 	event, err := VerifyWebhook(s.issuer.APIKey, s.issuer.APISecret, rawToken, body)

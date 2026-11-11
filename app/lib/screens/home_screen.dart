@@ -20,44 +20,50 @@ class HomeScreen extends StatelessWidget {
 
     return Scaffold(
       body: SafeArea(
-        child: Row(
+        child: Stack(
           children: [
-            _GuildRail(controller: controller),
-            if (wide) ...[
-              SizedBox(
-                width: 250,
-                child: _ChannelSidebar(
-                  controller: controller,
-                  onOpenChannel: controller.selectChannel,
-                  onOpenDm: controller.selectDm,
-                ),
-              ),
-              const VerticalDivider(width: 1, color: Color(0xFF1E1F22)),
-              Expanded(child: ChannelPane(controller: controller)),
-            ] else
-              Expanded(
-                child: _ChannelSidebar(
-                  controller: controller,
-                  onOpenChannel: (channel) async {
-                    await controller.selectChannel(channel);
-                    if (!context.mounted) return;
-                    await Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => ChannelScreen(controller: controller),
-                      ),
-                    );
-                  },
-                  onOpenDm: (dm) async {
-                    await controller.selectDm(dm);
-                    if (!context.mounted) return;
-                    await Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => ChannelScreen(controller: controller),
-                      ),
-                    );
-                  },
-                ),
-              ),
+            Row(
+              children: [
+                _GuildRail(controller: controller),
+                if (wide) ...[
+                  SizedBox(
+                    width: 250,
+                    child: _ChannelSidebar(
+                      controller: controller,
+                      onOpenChannel: controller.selectChannel,
+                      onOpenDm: controller.selectDm,
+                    ),
+                  ),
+                  const VerticalDivider(width: 1, color: Color(0xFF1E1F22)),
+                  Expanded(child: ChannelPane(controller: controller)),
+                ] else
+                  Expanded(
+                    child: _ChannelSidebar(
+                      controller: controller,
+                      onOpenChannel: (channel) async {
+                        await controller.selectChannel(channel);
+                        if (!context.mounted) return;
+                        await Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) =>
+                                ChannelScreen(controller: controller),
+                          ),
+                        );
+                      },
+                      onOpenDm: (dm) async {
+                        await controller.selectDm(dm);
+                        if (!context.mounted) return;
+                        await Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) =>
+                                ChannelScreen(controller: controller),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
           ],
         ),
       ),
@@ -213,6 +219,7 @@ class _ChannelSidebar extends StatelessWidget {
                     (dm) => _DmTile(
                       dm: dm,
                       selfId: controller.user?.id ?? '',
+                      unread: controller.dmUnread(dm.id),
                       selected: controller.dm?.id == dm.id,
                       onTap: () => onOpenDm(dm),
                     ),
@@ -369,12 +376,14 @@ class _DmTile extends StatelessWidget {
   const _DmTile({
     required this.dm,
     required this.selfId,
+    required this.unread,
     required this.selected,
     required this.onTap,
   });
 
   final DmChannel dm;
   final String selfId;
+  final int unread;
   final bool selected;
   final VoidCallback onTap;
 
@@ -405,6 +414,24 @@ class _DmTile extends StatelessWidget {
                     ),
                   ),
                 ),
+                if (unread > 0)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: kDanger,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      unread > 99 ? '99+' : '$unread',
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -619,7 +646,7 @@ class _TextChannelState extends State<_TextChannel> {
             trailing: widget.channel.isDm
                 ? IconButton(
                     tooltip: 'Позвонить',
-                    onPressed: () => controller.joinVoice(widget.channel),
+                    onPressed: () => controller.startDmCall(widget.channel),
                     icon: const Icon(Icons.call, size: 20),
                   )
                 : null,
@@ -889,6 +916,14 @@ class _VoicePanel extends StatelessWidget {
                             const SizedBox(height: 12),
                             Text(
                               voice.error!,
+                              style: const TextStyle(color: kDanger),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                          if (controller.callNotice != null) ...[
+                            const SizedBox(height: 12),
+                            Text(
+                              controller.callNotice!,
                               style: const TextStyle(color: kDanger),
                               textAlign: TextAlign.center,
                             ),

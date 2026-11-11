@@ -23,10 +23,17 @@ import (
 	"github.com/Nemanc123/voxnica/internal/voice"
 )
 
+type userEvent struct {
+	users []string
+	kind  string
+	data  any
+}
+
 type recordingPublisher struct {
-	mu     sync.Mutex
-	guild  []string
-	events []voice.Event
+	mu         sync.Mutex
+	guild      []string
+	events     []voice.Event
+	userEvents []userEvent
 }
 
 func (r *recordingPublisher) PublishVoice(_ context.Context, guildID string, event voice.Event) {
@@ -34,6 +41,21 @@ func (r *recordingPublisher) PublishVoice(_ context.Context, guildID string, eve
 	defer r.mu.Unlock()
 	r.guild = append(r.guild, guildID)
 	r.events = append(r.events, event)
+}
+
+func (r *recordingPublisher) PublishToUsers(_ context.Context, userIDs []string, eventType string, data any) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.userEvents = append(r.userEvents, userEvent{users: userIDs, kind: eventType, data: data})
+}
+
+func (r *recordingPublisher) lastUserEvent() userEvent {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.userEvents) == 0 {
+		return userEvent{}
+	}
+	return r.userEvents[len(r.userEvents)-1]
 }
 
 func (r *recordingPublisher) last() voice.Event {

@@ -51,3 +51,74 @@ func TestJoinTextChannelStillRejected(t *testing.T) {
 		t.Fatalf("текстовый канал: ожидали ErrValidation, получили %v", err)
 	}
 }
+
+func TestInviteDMNotifiesRecipientOnly(t *testing.T) {
+	e := newVoiceEnv(t)
+	ctx := context.Background()
+
+	channel, err := e.dm.Open(ctx, e.owner, e.member)
+	if err != nil {
+		t.Fatalf("открытие диалога: %v", err)
+	}
+
+	if err := e.service.Invite(ctx, e.owner, channel.ID); err != nil {
+		t.Fatalf("вызов: %v", err)
+	}
+
+	event := e.pub.lastUserEvent()
+	if event.kind != "CALL_INVITE" {
+		t.Fatalf("событие %q, ожидали CALL_INVITE", event.kind)
+	}
+	if len(event.users) != 1 || event.users[0] != e.member {
+		t.Fatalf("вызов ушёл %v, ожидали только получателя %s", event.users, e.member)
+	}
+	data, ok := event.data.(map[string]any)
+	if !ok || data["channel_id"] != channel.ID || data["from_user_id"] != e.owner {
+		t.Fatalf("данные вызова: %+v", event.data)
+	}
+}
+
+func TestInviteRejectsStranger(t *testing.T) {
+	e := newVoiceEnv(t)
+	ctx := context.Background()
+
+	channel, err := e.dm.Open(ctx, e.owner, e.member)
+	if err != nil {
+		t.Fatalf("открытие диалога: %v", err)
+	}
+
+	if err := e.service.Invite(ctx, e.stranger, channel.ID); !errors.Is(err, voice.ErrForbidden) {
+		t.Fatalf("посторонний: ожидали ErrForbidden, получили %v", err)
+	}
+}
+
+func TestInviteRejectsGuildChannel(t *testing.T) {
+	e := newVoiceEnv(t)
+	ctx := context.Background()
+
+	if err := e.service.Invite(ctx, e.owner, e.voiceID); !errors.Is(err, voice.ErrValidation) {
+		t.Fatalf("канал сервера: ожидали ErrValidation, получили %v", err)
+	}
+}
+
+func TestDeclineDMNotifiesCaller(t *testing.T) {
+	e := newVoiceEnv(t)
+	ctx := context.Background()
+
+	channel, err := e.dm.Open(ctx, e.owner, e.member)
+	if err != nil {
+		t.Fatalf("открытие диалога: %v", err)
+	}
+
+	if err := e.service.Decline(ctx, e.member, channel.ID); err != nil {
+		t.Fatalf("отклонение: %v", err)
+	}
+
+	event := e.pub.lastUserEvent()
+	if event.kind != "CALL_DECLINE" {
+		t.Fatalf("событие %q, ожидали CALL_DECLINE", event.kind)
+	}
+	if len(event.users) != 1 || event.users[0] != e.owner {
+		t.Fatalf("отклонение ушло %v, ожидали звонящего %s", event.users, e.owner)
+	}
+}

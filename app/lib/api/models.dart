@@ -105,6 +105,25 @@ class Channel {
   );
 }
 
+/// Входящий звонок в личном канале.
+class IncomingCall {
+  const IncomingCall({
+    required this.channelId,
+    required this.fromUserId,
+    required this.fromName,
+  });
+
+  final String channelId;
+  final String fromUserId;
+  final String fromName;
+
+  factory IncomingCall.fromJson(Map<String, dynamic> json) => IncomingCall(
+    channelId: json['channel_id'] as String? ?? '',
+    fromUserId: json['from_user_id'] as String? ?? '',
+    fromName: json['from_name'] as String? ?? 'Собеседник',
+  );
+}
+
 /// Собеседник в личном канале.
 class DmParticipant {
   const DmParticipant({

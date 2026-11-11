@@ -63,6 +63,32 @@ func (h *VoiceHandlers) SetState(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// Invite звонит получателю личного канала.
+func (h *VoiceHandlers) Invite(w http.ResponseWriter, r *http.Request) {
+	userID, _ := UserIDFrom(r.Context())
+	channelID := chi.URLParam(r, "channelID")
+
+	if err := h.svc.Invite(r.Context(), userID, channelID); err != nil {
+		mapVoiceError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// Decline сообщает звонящему, что вызов отклонён.
+func (h *VoiceHandlers) Decline(w http.ResponseWriter, r *http.Request) {
+	userID, _ := UserIDFrom(r.Context())
+	channelID := chi.URLParam(r, "channelID")
+
+	if err := h.svc.Decline(r.Context(), userID, channelID); err != nil {
+		mapVoiceError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // Participants — кто сейчас сидит в канале.
 func (h *VoiceHandlers) Participants(w http.ResponseWriter, r *http.Request) {
 	userID, _ := UserIDFrom(r.Context())

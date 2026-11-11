@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 
 import 'screens/auth_screen.dart';
+import 'screens/channel_screen.dart';
 import 'screens/home_screen.dart';
 import 'state/app_controller.dart';
 import 'theme.dart';
+import 'widgets/incoming_call_card.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -19,6 +21,7 @@ class VoxnicaApp extends StatefulWidget {
 
 class _VoxnicaAppState extends State<VoxnicaApp> {
   late final AppController _controller;
+  final _navigatorKey = GlobalKey<NavigatorState>();
 
   @override
   void initState() {
@@ -39,6 +42,47 @@ class _VoxnicaAppState extends State<VoxnicaApp> {
       title: 'voxnica',
       debugShowCheckedModeBanner: false,
       theme: buildTheme(),
+      navigatorKey: _navigatorKey,
+      // Входящий звонок должен быть виден на любом экране, а не только
+      // на домашнем — поэтому карточка живёт над Navigator.
+      builder: (context, child) {
+        return ListenableBuilder(
+          listenable: _controller,
+          builder: (context, _) {
+            return Stack(
+              children: [
+                ?child,
+                if (_controller.incomingCall != null)
+                  Positioned(
+                    top: 24,
+                    left: 0,
+                    right: 0,
+                    child: Center(
+                      child: IncomingCallCard(
+                        controller: _controller,
+                        onAccepted: () {
+                          if (MediaQuery.sizeOf(context).width >= 850) {
+                            return;
+                          }
+                          final navigator = _navigatorKey.currentState;
+                          // Если пользователь уже внутри канала, второй экран
+                          // не нужен — голосовая панель появится на месте.
+                          if (navigator == null || navigator.canPop()) return;
+                          navigator.push(
+                            MaterialPageRoute<void>(
+                              builder: (_) =>
+                                  ChannelScreen(controller: _controller),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          },
+        );
+      },
       home: ListenableBuilder(
         listenable: _controller,
         builder: (context, _) {

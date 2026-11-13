@@ -1,0 +1,145 @@
+# Продакшен-контур на одном VDS.
+#
+# Отличия от deploy/docker-compose.yml:
+# - TLS на nginx (80/443) и TURN/TLS (5349);
+# - наружу открыты только nginx и медиа-порты LiveKit;
+# - Postgres, Redis и SeaweedFS не публикуются;
+# - API собирается из Dockerfile.
+#
+# Перед запуском: cp .env.example .env, заполнить, затем ./render.sh и
+# выпустить сертификаты (см. docs/13-vds-deploy.md).
+
+name: voxnica_vds
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: dc_vds_postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    logging: *default-logging
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: dc_vds_redis
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    logging: *default-logging
+    restart: unless-stopped
+
+  storage:
+    image: chrislusf/seaweedfs:latest
+    container_name: dc_vds_storage
+    command: server -s3 -s3.port=8333 -dir=/data -s3.config=/etc/seaweedfs/s3.json
+    volumes:
+      - seaweeddata:/data
+      - ./runtime/seaweedfs-s3.json:/etc/seaweedfs/s3.json:ro
+    logging: *default-logging
+    restart: unless-stopped
+
+  livekit:
+    image: livekit/livekit-server:latest
+    container_name: dc_vds_livekit
+    command: ["--config", "/etc/livekit.yaml"]
+    volumes:
+      - ./runtime/livekit.yaml:/etc/livekit.yaml:ro
+    ports:
+      - "7881:7881"      # WebRTC TCP fallback
+      - "7882:7882/udp"  # WebRTC UDP mux
+      - "3478:3478/udp"  # TURN/UDP
+    depends_on:
+      - api
+    logging: *default-logging
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    container_name: dc_vds_api
+    environment:
+      HTTP_ADDR: "0.0.0.0:8080"
+      LOG_LEVEL: "info"
+      DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable"
+      REDIS_URL: "redis://redis:6379/0"
+      JWT_SECRET: "${JWT_SECRET}"
+      # Presigned-ссылки подписываются публичным именем: клиент ходит в S3
+      # через nginx, а API резолвит это имя в host-gateway (см. extra_hosts).
+      # Порт не указываем: minio-go возьмёт 443 из STORAGE_USE_SSL.
+      STORAGE_ENDPOINT: "s3.${DOMAIN}"
+      STORAGE_USE_SSL: "true"
+      STORAGE_ACCESS_KEY: "${STORAGE_ACCESS_KEY}"
+      STORAGE_SECRET_KEY: "${STORAGE_SECRET_KEY}"
+      STORAGE_BUCKET: "${STORAGE_BUCKET}"
+      LIVEKIT_URL: "wss://${RTC_DOMAIN}"
+      LIVEKIT_API_KEY: "${LIVEKIT_API_KEY}"
+      LIVEKIT_API_SECRET: "${LIVEKIT_API_SECRET}"
+      LIVEKIT_TOKEN_TTL: "10m"
+    extra_hosts:
+      - "s3.${DOMAIN}:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      storage:
+        condition: service_started
+    logging: *default-logging
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:stable-alpine
+    container_name: dc_vds_nginx
+    ports:
+      - "80:80"
+      - "443:443"
+      - "5349:5349"   # TURN/TLS: терминируем TLS здесь
+    volumes:
+      - ./runtime/nginx.conf:/etc/nginx/nginx.conf:ro
+      - certs:/etc/letsencrypt:ro
+      - certbot-www:/var/www/certbot:ro
+    depends_on:
+      - api
+      - livekit
+      - storage
+    logging: *default-logging
+    restart: unless-stopped
+
+  # Только для выпуска и продления сертификатов.
+  # Запускается вручную: docker compose --profile certbot run --rm certbot ...
+  certbot:
+    image: certbot/certbot:latest
+    profiles: ["certbot"]
+    volumes:
+      - certs:/etc/letsencrypt
+      - certbot-www:/var/www/certbot
+
+volumes:
+  pgdata:
+  redisdata:
+  seaweeddata:
+  certs:
+  certbot-www:

@@ -1,0 +1,34 @@
+# LiveKit на VDS с встроенным TURN.
+#
+# external_tls: true — TLS для TURN терминирует nginx на 5349,
+# внутри сети LiveKit слушает обычный TCP 5349.
+
+port: 7880
+
+bind_addresses:
+  - "0.0.0.0"
+
+rtc:
+  tcp_port: 7881
+  udp_port: 7882
+  # Публичный IP определяется через STUN; за NAT пробросьте порты.
+  use_external_ip: true
+
+keys:
+  "${LIVEKIT_API_KEY}": "${LIVEKIT_API_SECRET}"
+
+turn:
+  enabled: true
+  domain: "${RTC_DOMAIN}"
+  tls_port: 5349
+  udp_port: 3478
+  external_tls: true
+
+webhook:
+  api_key: "${LIVEKIT_API_KEY}"
+  urls:
+    # API и LiveKit в одной Docker-сети.
+    - "http://api:8080/webhooks/livekit"
+
+logging:
+  level: info

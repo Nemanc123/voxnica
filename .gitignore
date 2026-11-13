@@ -22,6 +22,9 @@ src-tauri/target/
 
 # --- Docker / данные ---
 /deploy/data/
+/deploy/vds/runtime/
+/deploy/vds/backups/
+/deploy/vds/certs/
 *.log
 
 # --- IDE ---

@@ -120,6 +120,7 @@ func run() error {
 		AccessKey: cfg.StorageAccessKey,
 		SecretKey: cfg.StorageSecretKey,
 		Bucket:    cfg.StorageBucket,
+		UseSSL:    cfg.StorageUseSSL,
 	}); err != nil {
 		slog.Warn("хранилище недоступно: вложения отключены", "err", err)
 	} else {

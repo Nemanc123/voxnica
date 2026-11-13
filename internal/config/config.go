@@ -27,6 +27,7 @@ type Config struct {
 	StorageAccessKey string
 	StorageSecretKey string
 	StorageBucket    string
+	StorageUseSSL    bool
 
 	LiveKitURL       string
 	LiveKitAPIKey    string
@@ -48,6 +49,7 @@ func Load() Config {
 		StorageAccessKey: env("STORAGE_ACCESS_KEY", "dcstorage"),
 		StorageSecretKey: env("STORAGE_SECRET_KEY", "devstorage123"),
 		StorageBucket:    env("STORAGE_BUCKET", "voxnica"),
+		StorageUseSSL:    envBool("STORAGE_USE_SSL", false),
 
 		// --dev у LiveKit использует ровно эти ключи. На сервере — свои.
 		LiveKitURL:       env("LIVEKIT_URL", "ws://localhost:7880"),
@@ -75,6 +77,23 @@ func env(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func envBool(key string, fallback bool) bool {
+	raw := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
+	if raw == "" {
+		return fallback
+	}
+	switch raw {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		slog.Warn("не удалось разобрать флаг, использую значение по умолчанию",
+			"key", key, "value", raw, "fallback", fallback)
+		return fallback
+	}
 }
 
 func parseLevel(s string) slog.Level {

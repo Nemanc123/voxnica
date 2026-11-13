@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.voxnica" "\0"
-            VALUE "FileDescription", "voxnica" "\0"
+            VALUE "CompanyName", "Voxnica" "\0"
+            VALUE "FileDescription", "Voxnica" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "voxnica" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.voxnica. All rights reserved." "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 Voxnica. All rights reserved." "\0"
             VALUE "OriginalFilename", "voxnica.exe" "\0"
-            VALUE "ProductName", "voxnica" "\0"
+            VALUE "ProductName", "Voxnica" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

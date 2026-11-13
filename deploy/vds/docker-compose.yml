@@ -89,7 +89,7 @@ services:
       # Presigned-ссылки подписываются публичным именем: клиент ходит в S3
       # через nginx, а API резолвит это имя в host-gateway (см. extra_hosts).
       # Порт не указываем: minio-go возьмёт 443 из STORAGE_USE_SSL.
-      STORAGE_ENDPOINT: "s3.${DOMAIN}"
+      STORAGE_ENDPOINT: "${S3_DOMAIN}"
       STORAGE_USE_SSL: "true"
       STORAGE_ACCESS_KEY: "${STORAGE_ACCESS_KEY}"
       STORAGE_SECRET_KEY: "${STORAGE_SECRET_KEY}"
@@ -99,7 +99,7 @@ services:
       LIVEKIT_API_SECRET: "${LIVEKIT_API_SECRET}"
       LIVEKIT_TOKEN_TTL: "10m"
     extra_hosts:
-      - "s3.${DOMAIN}:host-gateway"
+      - "${S3_DOMAIN}:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy

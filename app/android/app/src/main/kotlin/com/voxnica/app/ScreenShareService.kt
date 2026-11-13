@@ -1,4 +1,4 @@
-package com.voxnica.voxnica
+package com.voxnica.app
 
 import android.app.Notification
 import android.app.NotificationChannel

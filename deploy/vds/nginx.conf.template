@@ -1,5 +1,5 @@
 # nginx для VDS: HTTPS для API, LiveKit и S3 + TURN/TLS.
-# Шаблон; render.sh подставляет DOMAIN, RTC_DOMAIN и CERT_NAME.
+# Шаблон; render.sh подставляет API_DOMAIN, RTC_DOMAIN, S3_DOMAIN и CERT_NAME.
 
 user  nginx;
 worker_processes auto;
@@ -36,7 +36,7 @@ http {
     # ACME-челлендж и редирект на HTTPS.
     server {
         listen 80;
-        server_name ${DOMAIN} ${RTC_DOMAIN} s3.${DOMAIN};
+        server_name ${API_DOMAIN} ${RTC_DOMAIN} ${S3_DOMAIN};
 
         location /.well-known/acme-challenge/ {
             root /var/www/certbot;
@@ -50,7 +50,7 @@ http {
     # Go API.
     server {
         listen 443 ssl;
-        server_name ${DOMAIN};
+        server_name ${API_DOMAIN};
 
         ssl_certificate     /etc/letsencrypt/live/${CERT_NAME}/fullchain.pem;
         ssl_certificate_key /etc/letsencrypt/live/${CERT_NAME}/privkey.pem;
@@ -96,7 +96,7 @@ http {
     # включает заголовок Host, иначе загрузка получит 403.
     server {
         listen 443 ssl;
-        server_name s3.${DOMAIN};
+        server_name ${S3_DOMAIN};
 
         ssl_certificate     /etc/letsencrypt/live/${CERT_NAME}/fullchain.pem;
         ssl_certificate_key /etc/letsencrypt/live/${CERT_NAME}/privkey.pem;

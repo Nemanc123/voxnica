@@ -20,7 +20,7 @@ mkdir -p runtime
 envsubst '${LIVEKIT_API_KEY} ${LIVEKIT_API_SECRET} ${RTC_DOMAIN}' \
     < livekit.yaml.template > runtime/livekit.yaml
 
-envsubst '${DOMAIN} ${RTC_DOMAIN} ${CERT_NAME}' \
+envsubst '${API_DOMAIN} ${RTC_DOMAIN} ${S3_DOMAIN} ${CERT_NAME}' \
     < nginx.conf.template > runtime/nginx.conf
 
 envsubst '${STORAGE_ACCESS_KEY} ${STORAGE_SECRET_KEY}' \

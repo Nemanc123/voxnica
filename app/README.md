@@ -1,6 +1,6 @@
-# voxnica
+# Voxnica
 
-A new Flutter project.
+Клиент Voxnica: текст, голос и видео для сообществ.
 
 ## Getting Started
 

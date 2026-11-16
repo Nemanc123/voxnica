@@ -26,6 +26,8 @@ envsubst '${API_DOMAIN} ${RTC_DOMAIN} ${S3_DOMAIN} ${CERT_NAME}' \
 envsubst '${STORAGE_ACCESS_KEY} ${STORAGE_SECRET_KEY}' \
     < seaweedfs-s3.json.template > runtime/seaweedfs-s3.json
 
-chmod 600 runtime/*.json runtime/*.yaml runtime/*.conf
+# Конфиги читают процессы внутри контейнеров под непривилегированными
+# пользователями, поэтому 644, а не 600. Секреты всё равно не в Git.
+chmod 644 runtime/*.json runtime/*.yaml runtime/*.conf
 
 echo "конфиги отрендерены в deploy/vds/runtime/"

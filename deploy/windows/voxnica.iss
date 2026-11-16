@@ -30,8 +30,8 @@ DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 ; Права администратора не нужны: ставим в профиль пользователя.
 PrivilegesRequired=lowest
-ArchitecturesAllowed=x64
-ArchitecturesInstallIn64BitMode=x64
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=..\..\dist
 OutputBaseFilename=VoxnicaSetup-{#AppVersion}
 SetupIconFile=..\..\app\windows\runner\resources\app_icon.ico

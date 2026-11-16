@@ -45,42 +45,46 @@ class _VoxnicaAppState extends State<VoxnicaApp> {
       navigatorKey: _navigatorKey,
       // Входящий звонок должен быть виден на любом экране, а не только
       // на домашнем — поэтому карточка живёт над Navigator.
+      // Navigator не оборачиваем в ListenableBuilder: перестраивается
+      // только Positioned с карточкой, иначе ломается дерево InheritedElement.
       builder: (context, child) {
-        return ListenableBuilder(
-          listenable: _controller,
-          builder: (context, _) {
-            return Stack(
-              children: [
-                ?child,
-                if (_controller.incomingCall != null)
-                  Positioned(
-                    top: 24,
-                    left: 0,
-                    right: 0,
-                    child: Center(
-                      child: IncomingCallCard(
-                        controller: _controller,
-                        onAccepted: () {
-                          if (MediaQuery.sizeOf(context).width >= 850) {
-                            return;
-                          }
-                          final navigator = _navigatorKey.currentState;
-                          // Если пользователь уже внутри канала, второй экран
-                          // не нужен — голосовая панель появится на месте.
-                          if (navigator == null || navigator.canPop()) return;
-                          navigator.push(
-                            MaterialPageRoute<void>(
-                              builder: (_) =>
-                                  ChannelScreen(controller: _controller),
-                            ),
-                          );
-                        },
-                      ),
+        return Stack(
+          children: [
+            ?child,
+            Positioned(
+              top: 24,
+              left: 0,
+              right: 0,
+              child: ListenableBuilder(
+                listenable: _controller,
+                builder: (context, _) {
+                  if (_controller.incomingCall == null) {
+                    return const SizedBox.shrink();
+                  }
+                  return Center(
+                    child: IncomingCallCard(
+                      controller: _controller,
+                      onAccepted: () {
+                        if (MediaQuery.sizeOf(context).width >= 850) {
+                          return;
+                        }
+                        final navigator = _navigatorKey.currentState;
+                        // Если пользователь уже внутри канала, второй экран
+                        // не нужен — голосовая панель появится на месте.
+                        if (navigator == null || navigator.canPop()) return;
+                        navigator.push(
+                          MaterialPageRoute<void>(
+                            builder: (_) =>
+                                ChannelScreen(controller: _controller),
+                          ),
+                        );
+                      },
                     ),
-                  ),
-              ],
-            );
-          },
+                  );
+                },
+              ),
+            ),
+          ],
         );
       },
       home: ListenableBuilder(

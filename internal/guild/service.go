@@ -437,6 +437,24 @@ func (s *Service) CreateInvite(ctx context.Context, actorID, guildID, channelID 
 		return "", err
 	}
 
+	// Приглашение всегда привязано к каналу: в схеме invites.channel_id
+	// NOT NULL. Пустой id раньше доходил до приведения ::uuid и давал 500
+	// вместо понятной ошибки.
+	if channelID == "" {
+		return "", fmt.Errorf("%w: нужен channel_id", ErrValidation)
+	}
+
+	channel, err := s.store.ChannelByID(ctx, channelID)
+	if err != nil {
+		return "", err
+	}
+	// Приглашение чужого сервера создало бы строку с каналом из другого
+	// сервера: при удалении канала пропало бы приглашение, а фильтрация
+	// прав смотрела бы не туда. У личных каналов guild_id = NULL.
+	if channel.GuildID == nil || *channel.GuildID != guildID {
+		return "", fmt.Errorf("%w: канал принадлежит другому серверу", ErrValidation)
+	}
+
 	code, err := randomCode()
 	if err != nil {
 		return "", err

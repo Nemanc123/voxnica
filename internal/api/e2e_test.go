@@ -209,6 +209,33 @@ func TestHTTPFlow(t *testing.T) {
 		map[string]any{"channel_id": channelID}, http.StatusCreated)
 	bob.mustDo("POST", "/api/v1/invites/"+invite["code"].(string), map[string]any{}, http.StatusOK)
 
+	// 5.0. Негативные сценарии приглашений.
+	// Без channel_id — понятная 400, а не 500 из приведения к uuid.
+	alice.mustDo("POST", "/api/v1/guilds/"+guildID+"/invites",
+		map[string]any{}, http.StatusBadRequest)
+
+	// Канал из другого сервера не должен подходить (иначе приглашение
+	// ссылается на чужой канал).
+	other := alice.mustDo("POST", "/api/v1/guilds", map[string]any{
+		"name": "Другой сервер",
+	}, http.StatusCreated)
+	var otherChannelID string
+	for _, raw := range other["channels"].([]any) {
+		ch := raw.(map[string]any)
+		if ch["type"] == "text" {
+			otherChannelID = ch["id"].(string)
+			break
+		}
+	}
+	if otherChannelID == "" {
+		t.Fatal("во втором сервере нет текстового канала")
+	}
+	alice.mustDo("POST", "/api/v1/guilds/"+guildID+"/invites",
+		map[string]any{"channel_id": otherChannelID}, http.StatusBadRequest)
+
+	// Неизвестный код — 404, а не 500.
+	bob.mustDo("POST", "/api/v1/invites/zzzzzz", map[string]any{}, http.StatusNotFound)
+
 	// 5.1. Список участников: владелец и вступивший.
 	members := bob.mustDo("GET", "/api/v1/guilds/"+guildID+"/members", nil, http.StatusOK)
 	if got := len(members["members"].([]any)); got != 2 {

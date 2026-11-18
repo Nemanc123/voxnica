@@ -7,6 +7,7 @@ import '../gateway/gateway_client.dart';
 import '../state/app_controller.dart';
 import '../state/voice_controller.dart';
 import '../theme.dart';
+import '../widgets/invite_dialog.dart';
 import 'channel_screen.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -125,6 +126,12 @@ class _GuildRail extends StatelessWidget {
             ),
           ),
           IconButton(
+            tooltip: 'Присоединиться по коду',
+            onPressed: () => _joinByCode(context),
+            icon: const Icon(Icons.group_add_outlined),
+            color: kOnline,
+          ),
+          IconButton(
             tooltip: 'Создать сервер',
             onPressed: () => _createGuild(context),
             icon: const Icon(Icons.add_circle_outline),
@@ -134,6 +141,25 @@ class _GuildRail extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _joinByCode(BuildContext context) async {
+    final code = await _prompt(
+      context,
+      'Присоединиться к серверу',
+      'Код приглашения',
+    );
+    if (code == null || code.trim().isEmpty) return;
+
+    final ok = await controller.joinByInvite(code);
+    if (!context.mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(controller.error ?? 'Не удалось присоединиться'),
+        ),
+      );
+    }
   }
 
   Future<void> _createGuild(BuildContext context) async {
@@ -184,12 +210,18 @@ class _ChannelSidebar extends StatelessWidget {
                     style: const TextStyle(fontWeight: FontWeight.w700),
                   ),
                 ),
-                if (guild != null)
+                if (guild != null) ...[
+                  IconButton(
+                    tooltip: 'Пригласить в сервер',
+                    onPressed: () => _invite(context),
+                    icon: const Icon(Icons.person_add_alt_1, size: 20),
+                  ),
                   IconButton(
                     tooltip: 'Создать канал',
                     onPressed: () => _createChannel(context),
                     icon: const Icon(Icons.add, size: 20),
                   ),
+                ],
               ],
             ),
           ),
@@ -251,7 +283,8 @@ class _ChannelSidebar extends StatelessWidget {
                   const Padding(
                     padding: EdgeInsets.all(16),
                     child: Text(
-                      'Создайте сервер кнопкой «+» слева',
+                      'Создайте сервер кнопкой «+» слева или присоединитесь '
+                      'по коду приглашения',
                       textAlign: TextAlign.center,
                       style: TextStyle(color: kTextMuted),
                     ),
@@ -262,6 +295,25 @@ class _ChannelSidebar extends StatelessWidget {
           _UserFooter(controller: controller),
         ],
       ),
+    );
+  }
+
+  Future<void> _invite(BuildContext context) async {
+    final code = await controller.createInvite();
+    if (!context.mounted) return;
+
+    if (code == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(controller.error ?? 'Не удалось создать приглашение'),
+        ),
+      );
+      return;
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) => InviteCodeDialog(code: code),
     );
   }
 

@@ -455,6 +455,68 @@ class AppController extends ChangeNotifier {
     }
   }
 
+  /// Создаёт приглашение в текущий сервер.
+  ///
+  /// Возвращает код либо null, если создать не удалось (текст ошибки — в
+  /// [error]). Канал берём первый текстовый: сервер требует channel_id.
+  Future<String?> createInvite() async {
+    final guild = _guild;
+    if (guild == null) return null;
+
+    final channel = _firstOrNull(_channels.where((c) => c.isText));
+    if (channel == null) {
+      _error = 'В сервере нет текстового канала для приглашения';
+      notifyListeners();
+      return null;
+    }
+
+    _busy = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      return await api.createInvite(guild.id, channel.id);
+    } catch (e) {
+      _error = _describe(e);
+      return null;
+    } finally {
+      _busy = false;
+      notifyListeners();
+    }
+  }
+
+  /// Вступает в сервер по коду приглашения и делает его текущим.
+  Future<bool> joinByInvite(String code) async {
+    final trimmed = code.trim();
+    if (trimmed.isEmpty) return false;
+
+    final known = _guilds.map((g) => g.id).toSet();
+
+    _busy = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      final guildId = await api.joinByInvite(trimmed);
+      _guilds = await api.listGuilds();
+
+      final joined = _firstOrNull(
+        _guilds.where((g) => g.id == guildId && !known.contains(g.id)),
+      );
+      final target =
+          joined ?? _firstOrNull(_guilds.where((g) => g.id == guildId));
+
+      if (target != null) await selectGuild(target);
+      return true;
+    } catch (e) {
+      _error = _describe(e);
+      return false;
+    } finally {
+      _busy = false;
+      notifyListeners();
+    }
+  }
+
   Future<bool> createChannel(String name, String type) async {
     final guild = _guild;
     final trimmed = name.trim();

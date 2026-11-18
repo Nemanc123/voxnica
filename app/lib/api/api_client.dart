@@ -143,6 +143,29 @@ class ApiClient {
     return raw.cast<Map<String, dynamic>>().map(GuildMember.fromJson).toList();
   }
 
+  /// Создаёт приглашение и возвращает код.
+  ///
+  /// Канал обязателен: в схеме `invites.channel_id NOT NULL`, сервер
+  /// отвечает 400 без него.
+  Future<String> createInvite(String guildId, String channelId) async {
+    final json = await _request(
+      'POST',
+      '/guilds/$guildId/invites',
+      body: {'channel_id': channelId},
+    );
+    return json!['code'] as String;
+  }
+
+  /// Вступает в сервер по коду приглашения.
+  Future<String> joinByInvite(String code) async {
+    final json = await _request(
+      'POST',
+      '/invites/${Uri.encodeComponent(code)}',
+      body: const <String, dynamic>{},
+    );
+    return json?['guild_id'] as String? ?? '';
+  }
+
   Future<List<DmChannel>> listDms() async {
     final json = await _request('GET', '/dms');
     final raw = json?['channels'] as List<dynamic>? ?? [];

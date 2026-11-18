@@ -38,3 +38,6 @@ Thumbs.db
 /docs/
 /README.md
 
+
+# Бэкапы runtime при обновлении сервера (могут содержать секреты)
+/deploy/vds/runtime.bak.*

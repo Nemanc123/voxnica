@@ -59,8 +59,3 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopico
 
 [Run]
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
-
-[UninstallDelete]
-; Логи и кэш приложения в профиле установщик не трогает:
-; удаляем только то, что положил сам.
-Type: filesandordirs; Name: "{app}"

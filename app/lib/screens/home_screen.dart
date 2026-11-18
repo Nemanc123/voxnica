@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:livekit_client/livekit_client.dart';
 
 import '../api/models.dart';
+import '../core/version.dart';
 import '../gateway/gateway_client.dart';
 import '../state/app_controller.dart';
 import '../state/voice_controller.dart';
@@ -543,6 +544,11 @@ class _UserFooter extends StatelessWidget {
                     Text(
                       online ? 'в сети' : 'подключение…',
                       style: const TextStyle(fontSize: 11, color: kTextMuted),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'v$kAppVersion',
+                      style: const TextStyle(fontSize: 10, color: kTextMuted),
                     ),
                   ],
                 ),

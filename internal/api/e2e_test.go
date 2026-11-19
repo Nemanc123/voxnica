@@ -23,6 +23,7 @@ import (
 	"github.com/Nemanc123/voxnica/internal/api"
 	"github.com/Nemanc123/voxnica/internal/auth"
 	"github.com/Nemanc123/voxnica/internal/chat"
+	"github.com/Nemanc123/voxnica/internal/dm"
 	"github.com/Nemanc123/voxnica/internal/gateway"
 	"github.com/Nemanc123/voxnica/internal/guild"
 	"github.com/Nemanc123/voxnica/internal/social"
@@ -115,6 +116,8 @@ func newTestServer(t *testing.T, files *storage.Storage) (*httptest.Server, *cha
 	hub.SetFilter(gateway.NewCachedFilter(gs, 10*time.Second))
 
 	chatSvc := chat.NewService(st, gs, hub)
+	dmSvc := dm.NewService(st)
+	chatSvc = chatSvc.WithDM(dmSvc)
 	if files != nil {
 		chatSvc = chatSvc.WithStorage(files)
 	}
@@ -133,6 +136,7 @@ func newTestServer(t *testing.T, files *storage.Storage) (*httptest.Server, *cha
 		Presence: api.NewPresenceHandlers(hub, gs),
 		Voice:    api.NewVoiceHandlers(voiceSvc),
 		Social:   api.NewSocialHandlers(social.NewService(st), hub),
+		DM:       api.NewDMHandlers(dmSvc),
 	})
 
 	srv := httptest.NewServer(router)
@@ -824,4 +828,64 @@ func TestSocialRateLimits(t *testing.T) {
 	}
 	c.mustDo("POST", "/api/v1/relationships/00000000-0000-0000-0000-000000000099",
 		map[string]any{"action": "request"}, http.StatusTooManyRequests)
+}
+
+// TestDMBlockedAfterOpen проверяет обещание интерфейса: после блокировки
+// в уже открытом диалоге нельзя ни писать, ни получать доступ.
+func TestDMBlockedAfterOpen(t *testing.T) {
+	srv, _ := newTestServer(t, nil)
+	suffix := time.Now().UnixNano()
+
+	alice := &client{t: t, base: srv.URL}
+	bob := &client{t: t, base: srv.URL}
+
+	aliceName := randomName(suffix, "da")
+	bobName := randomName(suffix, "db")
+
+	alice.mustDo("POST", "/api/v1/auth/register", map[string]any{
+		"username": aliceName,
+		"password": "very-long-password",
+	}, http.StatusCreated)
+	bob.mustDo("POST", "/api/v1/auth/register", map[string]any{
+		"username": bobName,
+		"password": "very-long-password",
+	}, http.StatusCreated)
+
+	aliceLogin := alice.mustDo("POST", "/api/v1/auth/login", map[string]any{
+		"login":    aliceName,
+		"password": "very-long-password",
+	}, http.StatusOK)
+	alice.token = aliceLogin["access_token"].(string)
+	aliceID := aliceLogin["user"].(map[string]any)["id"].(string)
+
+	bobLogin := bob.mustDo("POST", "/api/v1/auth/login", map[string]any{
+		"login":    bobName,
+		"password": "very-long-password",
+	}, http.StatusOK)
+	bob.token = bobLogin["access_token"].(string)
+	bobID := bobLogin["user"].(map[string]any)["id"].(string)
+
+	// Диалог с незнакомцем: дружба и общий сервер не нужны.
+	dm := alice.mustDo("POST", "/api/v1/dms", map[string]any{
+		"user_id": bobID,
+	}, http.StatusOK)
+	channelID := dm["id"].(string)
+
+	alice.mustDo("POST", "/api/v1/channels/"+channelID+"/messages",
+		map[string]any{"content": "до блокировки"}, http.StatusCreated)
+
+	// bob блокирует alice.
+	bob.mustDo("PUT", "/api/v1/relationships/"+aliceID+"/block",
+		map[string]any{"blocked": true}, http.StatusNoContent)
+
+	// Ни заблокированный, ни блокирующий писать не могут.
+	alice.mustDo("POST", "/api/v1/channels/"+channelID+"/messages",
+		map[string]any{"content": "после блокировки"}, http.StatusForbidden)
+	bob.mustDo("POST", "/api/v1/channels/"+channelID+"/messages",
+		map[string]any{"content": "после блокировки"}, http.StatusForbidden)
+
+	// И новый диалог открыть тоже нельзя.
+	alice.mustDo("POST", "/api/v1/dms", map[string]any{
+		"user_id": bobID,
+	}, http.StatusForbidden)
 }

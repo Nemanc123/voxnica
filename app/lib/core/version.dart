@@ -4,4 +4,4 @@
 /// (подпись в подвале), а читать pubspec во время работы приложения
 /// нельзя. Рассинхрон ловит тест `test/version_test.dart` — он сравнивает
 /// эту константу с pubspec и падает, если они разошлись.
-const String kAppVersion = '1.0.5';
+const String kAppVersion = '1.0.6';

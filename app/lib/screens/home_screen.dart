@@ -10,6 +10,7 @@ import '../state/voice_controller.dart';
 import '../theme.dart';
 import '../widgets/invite_dialog.dart';
 import 'channel_screen.dart';
+import 'friends_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key, required this.controller});
@@ -86,6 +87,16 @@ class _GuildRail extends StatelessWidget {
       child: Column(
         children: [
           const SizedBox(height: 12),
+          IconButton(
+            tooltip: 'Друзья',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => FriendsScreen(controller: controller),
+              ),
+            ),
+            icon: const Icon(Icons.people_alt_outlined),
+            color: kOnline,
+          ),
           Expanded(
             child: ListView.builder(
               itemCount: controller.guilds.length,

@@ -398,3 +398,88 @@ class VoiceParticipant {
         selfDeaf: json['self_deaf'] as bool? ?? false,
       );
 }
+
+/// Запись связи: человек и когда связь появилась.
+class RelationshipEntry {
+  const RelationshipEntry({required this.user, this.since});
+
+  final User user;
+  final DateTime? since;
+
+  factory RelationshipEntry.fromJson(Map<String, dynamic> json) {
+    final rawSince = json['since'] as String?;
+    return RelationshipEntry(
+      user: User.fromJson(json['user'] as Map<String, dynamic>),
+      since: rawSince == null ? null : DateTime.tryParse(rawSince),
+    );
+  }
+}
+
+/// Всё, что нужно экрану «Друзья», одним ответом.
+class FriendsView {
+  const FriendsView({
+    required this.friends,
+    required this.incoming,
+    required this.outgoing,
+    required this.blocked,
+  });
+
+  const FriendsView.empty()
+    : friends = const [],
+      incoming = const [],
+      outgoing = const [],
+      blocked = const [];
+
+  final List<RelationshipEntry> friends;
+  final List<RelationshipEntry> incoming;
+  final List<RelationshipEntry> outgoing;
+  final List<RelationshipEntry> blocked;
+
+  bool get isEmpty =>
+      friends.isEmpty &&
+      incoming.isEmpty &&
+      outgoing.isEmpty &&
+      blocked.isEmpty;
+
+  static List<RelationshipEntry> _entries(Object? raw) {
+    final list = raw as List<dynamic>? ?? const [];
+    return list
+        .cast<Map<String, dynamic>>()
+        .map(RelationshipEntry.fromJson)
+        .toList();
+  }
+
+  factory FriendsView.fromJson(Map<String, dynamic> json) => FriendsView(
+    friends: _entries(json['friends']),
+    incoming: _entries(json['incoming']),
+    outgoing: _entries(json['outgoing']),
+    blocked: _entries(json['blocked']),
+  );
+}
+
+/// Результат поиска: человек и отношение к ищущему.
+class UserSearchResult {
+  const UserSearchResult({
+    required this.id,
+    required this.username,
+    this.displayName,
+    this.relation = 'none',
+  });
+
+  final String id;
+  final String username;
+  final String? displayName;
+  final String relation; // none | friend | incoming | outgoing | blocked
+
+  String get name => (displayName != null && displayName!.trim().isNotEmpty)
+      ? displayName!
+      : username;
+
+  factory UserSearchResult.fromJson(Map<String, dynamic> json) =>
+      UserSearchResult(
+        id: json['id'] as String,
+        username: json['username'] as String? ?? '',
+        displayName: json['display_name'] as String?,
+        relation: json['relation'] as String? ?? 'none',
+      );
+}

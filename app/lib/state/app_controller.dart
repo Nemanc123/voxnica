@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../api/api_client.dart';
 import '../api/models.dart';
 import '../gateway/gateway_client.dart';
+import 'friends_controller.dart';
 import 'voice_controller.dart';
 
 enum AppStage { loading, loggedOut, ready }
@@ -16,10 +17,12 @@ enum AppStage { loading, loggedOut, ready }
 class AppController extends ChangeNotifier {
   AppController({ApiClient? api}) : api = api ?? ApiClient() {
     voice = VoiceController(this.api);
+    friends = FriendsController(this.api);
   }
 
   final ApiClient api;
   late final VoiceController voice;
+  late final FriendsController friends;
 
   AppStage _stage = AppStage.loading;
   User? _user;
@@ -657,6 +660,17 @@ class AppController extends ChangeNotifier {
           }
           break;
         }
+      case 'FRIEND_REQUEST':
+      case 'FRIEND_ACCEPT':
+      case 'RELATIONSHIP_REMOVE':
+      case 'PRESENCE_UPDATE':
+        {
+          final data = event.data;
+          if (data is Map<String, dynamic>) {
+            friends.applyEvent(event.type, data);
+          }
+          break;
+        }
       case 'CALL_INVITE':
         {
           final data = event.data;
@@ -780,6 +794,7 @@ class AppController extends ChangeNotifier {
     if (gateway != null) unawaited(gateway.dispose());
 
     voice.dispose();
+    friends.dispose();
     super.dispose();
   }
 }

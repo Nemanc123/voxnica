@@ -166,6 +166,56 @@ class ApiClient {
     return json?['guild_id'] as String? ?? '';
   }
 
+  /// Все связи сразу: друзья, входящие, исходящие, блокировки.
+  Future<FriendsView> relationships() async {
+    final json = await _request('GET', '/relationships');
+    return FriendsView.fromJson(json ?? const {});
+  }
+
+  /// Статусы друзей: `{"<user_id>": "online"|"offline"}`.
+  Future<Map<String, String>> friendsPresence() async {
+    final json = await _request('GET', '/relationships/presence');
+    final raw = json?['presence'] as Map<String, dynamic>? ?? const {};
+    return raw.map(
+      (key, value) => MapEntry(key, value as String? ?? 'offline'),
+    );
+  }
+
+  /// Поиск людей по логину или имени.
+  Future<List<UserSearchResult>> searchUsers(String query) async {
+    final json = await _request('GET', '/users/search', query: {'q': query});
+    final raw = json?['users'] as List<dynamic>? ?? const [];
+    return raw
+        .cast<Map<String, dynamic>>()
+        .map(UserSearchResult.fromJson)
+        .toList();
+  }
+
+  /// Заявка в друзья.
+  Future<void> sendFriendRequest(String userID) => _request(
+    'POST',
+    '/relationships/$userID',
+    body: const {'action': 'request'},
+  ).then((_) {});
+
+  /// Принять входящую заявку.
+  Future<void> acceptFriendRequest(String userID) => _request(
+    'POST',
+    '/relationships/$userID',
+    body: const {'action': 'accept'},
+  ).then((_) {});
+
+  /// Удалить дружбу, отменить заявку или отклонить входящую.
+  Future<void> removeRelationship(String userID) =>
+      _request('DELETE', '/relationships/$userID').then((_) {});
+
+  /// Заблокировать или разблокировать.
+  Future<void> setBlocked(String userID, bool blocked) => _request(
+    'PUT',
+    '/relationships/$userID/block',
+    body: {'blocked': blocked},
+  ).then((_) {});
+
   Future<List<DmChannel>> listDms() async {
     final json = await _request('GET', '/dms');
     final raw = json?['channels'] as List<dynamic>? ?? [];

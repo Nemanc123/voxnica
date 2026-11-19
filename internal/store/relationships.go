@@ -133,15 +133,18 @@ func (s *Store) RequestFriend(ctx context.Context, from, to string) error {
 
 // AcceptFriend переводит обе строки пары в friend.
 //
+// Принимает только адресат заявки: у него строка pending_in, у отправителя —
+// pending_out. Без этого условия отправитель мог бы «принять» собственную
+// заявку и стать другом без согласия второй стороны (найдено ревью 19.11.2026).
+//
 // Возвращает false, если входящей заявки нет: обновлять нечего.
 func (s *Store) AcceptFriend(ctx context.Context, actor, from string) (bool, error) {
 	const query = `
 		WITH updated AS (
 			UPDATE relationships
 			   SET type = 'friend'
-			 WHERE type IN ('pending_in', 'pending_out')
-			   AND user_id IN ($1::uuid, $2::uuid)
-			   AND target_id IN ($1::uuid, $2::uuid)
+			 WHERE (user_id = $1::uuid AND target_id = $2::uuid AND type = 'pending_in')
+			    OR (user_id = $2::uuid AND target_id = $1::uuid AND type = 'pending_out')
 			RETURNING 1
 		)
 		SELECT count(*) FROM updated`

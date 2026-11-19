@@ -115,6 +115,42 @@ func TestRequestThenAcceptMakesFriends(t *testing.T) {
 	}
 }
 
+func TestSenderCannotAcceptOwnRequest(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+
+	if err := e.service.SendRequest(ctx, e.alice, e.bob); err != nil {
+		t.Fatalf("заявка: %v", err)
+	}
+
+	// Отправитель пытается принять свою же заявку — согласия адресата нет.
+	err := e.service.Accept(ctx, e.alice, e.bob)
+	if !errors.Is(err, social.ErrNotFound) {
+		t.Fatalf("отправитель не должен принимать свою заявку, получили %v", err)
+	}
+
+	ok, err := e.service.CanDM(ctx, e.alice, e.bob)
+	if err != nil {
+		t.Fatalf("canDM: %v", err)
+	}
+	if ok {
+		t.Fatal("без согласия адресата дружбы быть не должно")
+	}
+
+	// Адресат принимает нормально — и только тогда появляется дружба.
+	if err := e.service.Accept(ctx, e.bob, e.alice); err != nil {
+		t.Fatalf("принятие адресатом: %v", err)
+	}
+
+	ok, err = e.service.CanDM(ctx, e.alice, e.bob)
+	if err != nil {
+		t.Fatalf("canDM после принятия: %v", err)
+	}
+	if !ok {
+		t.Fatal("после принятия адресатом дружба должна быть")
+	}
+}
+
 func TestSecondRequestRejected(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()

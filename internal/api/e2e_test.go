@@ -710,6 +710,10 @@ func TestRelationshipsFlow(t *testing.T) {
 	alice.mustDo("POST", "/api/v1/relationships/"+bobID,
 		map[string]any{"action": "request"}, http.StatusConflict)
 
+	// 3.1. Отправитель не может принять свою заявку: согласия адресата нет.
+	alice.mustDo("POST", "/api/v1/relationships/"+bobID,
+		map[string]any{"action": "accept"}, http.StatusNotFound)
+
 	// 4. Принятие.
 	bob.mustDo("POST", "/api/v1/relationships/"+aliceID,
 		map[string]any{"action": "accept"}, http.StatusNoContent)

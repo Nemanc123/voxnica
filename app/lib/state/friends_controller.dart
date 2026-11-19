@@ -57,6 +57,12 @@ class FriendsController extends ChangeNotifier {
     }
   }
 
+  /// Очищает результаты поиска, не трогая список связей.
+  void clearSearch() {
+    _results = const [];
+    notifyListeners();
+  }
+
   /// Поиск людей по логину или имени (минимум 2 символа).
   Future<void> search(String query) async {
     final q = query.trim();

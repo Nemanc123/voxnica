@@ -182,20 +182,5 @@ func (s *Store) ChannelRecipientIDs(ctx context.Context, channelID string) ([]st
 	return out, nil
 }
 
-// UsersShareGuild — есть ли у двух пользователей общий сервер.
-// Правило: писать в личку можно только тем, с кем уже есть общий сервер.
-func (s *Store) UsersShareGuild(ctx context.Context, userA, userB string) (bool, error) {
-	const query = `
-		SELECT EXISTS (
-			SELECT 1
-			  FROM guild_members a
-			  JOIN guild_members b USING (guild_id)
-			 WHERE a.user_id = $1::uuid AND b.user_id = $2::uuid
-		)`
-
-	var ok bool
-	if err := s.db.QueryRow(ctx, query, userA, userB).Scan(&ok); err != nil {
-		return false, fmt.Errorf("общий сервер: %w", err)
-	}
-	return ok, nil
-}
+// UsersShareGuild удалена 19.11.2026: правило «писать только с общим
+// сервером» отменено, личка доступна любому (кроме заблокировавших).

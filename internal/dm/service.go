@@ -101,8 +101,8 @@ func (s *Service) List(ctx context.Context, userID string) ([]Channel, error) {
 }
 
 // Access сообщает, может ли пользователь работать с личным каналом,
-// и какие права ему там доступны. ok=false — пользователь не получатель
-// или канал не личный.
+// и какие права ему там доступны. ok=false — пользователь не получатель,
+// канал не личный или кто-то из участников заблокировал другого.
 func (s *Service) Access(ctx context.Context, userID, channelID string) (perms.Permission, bool, error) {
 	channel, err := s.store.ChannelByID(ctx, channelID)
 	if err != nil {
@@ -118,6 +118,26 @@ func (s *Service) Access(ctx context.Context, userID, channelID string) (perms.P
 	}
 	if !member {
 		return 0, false, nil
+	}
+
+	// Блокировка закрывает и уже существующий диалог: без этой проверки
+	// заблокированный продолжал бы писать и звонить в старую переписку
+	// (нашло ревью 19.11.2026).
+	recipients, err := s.store.ChannelRecipientIDs(ctx, channelID)
+	if err != nil {
+		return 0, false, err
+	}
+	for _, other := range recipients {
+		if other == userID {
+			continue
+		}
+		blocked, err := s.store.BlockedEither(ctx, userID, other)
+		if err != nil {
+			return 0, false, err
+		}
+		if blocked {
+			return 0, false, nil
+		}
 	}
 
 	return perms.DMDefault, true, nil

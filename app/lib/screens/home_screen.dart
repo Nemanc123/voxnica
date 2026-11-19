@@ -32,7 +32,9 @@ class HomeScreen extends StatelessWidget {
     }
 
     Future<void> openDm(DmChannel dm) async {
-      await controller.selectDm(dm);
+      // Диалог мог быть уже выбран (например, сразу после startDm) —
+      // второй раз ленту не грузим.
+      if (controller.dm?.id != dm.id) await controller.selectDm(dm);
       if (wide || !context.mounted) return;
       await Navigator.of(context).push(
         MaterialPageRoute<void>(
@@ -374,7 +376,7 @@ class _DmHomeSidebar extends StatelessWidget {
   Widget build(BuildContext context) {
     final selfId = controller.user?.id ?? '';
 
-    return Container(
+    return Material(
       color: kSidebar,
       child: Column(
         children: [
@@ -611,7 +613,8 @@ class _StartChatDialogState extends State<_StartChatDialog> {
   @override
   void initState() {
     super.initState();
-    widget.controller.friends.search('');
+    // Чистим только результаты поиска: список друзей и заявок не трогаем.
+    widget.controller.friends.clearSearch();
   }
 
   @override
@@ -879,13 +882,19 @@ class _UserFooter extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 4),
-                    Text(
-                      online ? 'в сети' : 'подключение…',
-                      style: const TextStyle(fontSize: 11, color: kTextMuted),
+                    Flexible(
+                      child: Text(
+                        online ? 'в сети' : 'подключение…',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 11, color: kTextMuted),
+                      ),
                     ),
                     const SizedBox(width: 6),
                     Text(
                       'v$kAppVersion',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontSize: 10, color: kTextMuted),
                     ),
                   ],

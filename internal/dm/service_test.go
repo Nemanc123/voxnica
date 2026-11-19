@@ -156,6 +156,33 @@ func TestOpenBlockedIsForbidden(t *testing.T) {
 	}
 }
 
+func TestAccessDeniedAfterBlock(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+
+	ch, err := e.service.Open(ctx, e.owner, e.member)
+	if err != nil {
+		t.Fatalf("диалог: %v", err)
+	}
+
+	if _, ok, err := e.service.Access(ctx, e.owner, ch.ID); err != nil || !ok {
+		t.Fatalf("до блокировки доступ должен быть: ok=%v err=%v", ok, err)
+	}
+
+	// Участник блокирует владельца: старый диалог остаётся в базе, но писать
+	// и звонить в него больше нельзя — Access для обоих должен запрещать.
+	if _, err := e.store.BlockUser(ctx, e.member, e.owner); err != nil {
+		t.Fatalf("блокировка: %v", err)
+	}
+
+	if _, ok, err := e.service.Access(ctx, e.owner, ch.ID); err != nil || ok {
+		t.Fatalf("после блокировки доступ должен быть закрыт: ok=%v err=%v", ok, err)
+	}
+	if _, ok, err := e.service.Access(ctx, e.member, ch.ID); err != nil || ok {
+		t.Fatalf("заблокировавший тоже не должен писать: ok=%v err=%v", ok, err)
+	}
+}
+
 func TestOpenRejectsSelf(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()

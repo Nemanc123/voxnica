@@ -313,6 +313,79 @@ func TestUnblockStrangerStaysStranger(t *testing.T) {
 	}
 }
 
+// Повторная блокировка не должна стирать память о дружбе.
+//
+// Регрессия, которую здесь ловим: в ON CONFLICT колонка бралась из
+// предлагаемой строки, и в blocked_prev попадало 'blocked'. С CHECK это
+// падало, а без него — тихо теряло дружбу.
+func TestRepeatedBlockKeepsFriendshipMemory(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+
+	if err := e.service.SendRequest(ctx, e.alice, e.bob); err != nil {
+		t.Fatalf("заявка: %v", err)
+	}
+	if err := e.service.Accept(ctx, e.bob, e.alice); err != nil {
+		t.Fatalf("принятие: %v", err)
+	}
+
+	if err := e.service.SetBlocked(ctx, e.alice, e.bob, true); err != nil {
+		t.Fatalf("первая блокировка: %v", err)
+	}
+	if err := e.service.SetBlocked(ctx, e.alice, e.bob, true); err != nil {
+		t.Fatalf("повторная блокировка: %v", err)
+	}
+	if err := e.service.SetBlocked(ctx, e.alice, e.bob, false); err != nil {
+		t.Fatalf("снятие блокировки: %v", err)
+	}
+
+	ok, err := e.service.CanDM(ctx, e.alice, e.bob)
+	if err != nil {
+		t.Fatalf("canDM: %v", err)
+	}
+	if !ok {
+		t.Fatal("после двух блокировок дружба должна вернуться")
+	}
+}
+
+// Вторая сторона должна узнать о восстановлении дружбы событием, иначе
+// у неё в списке останется «заблокирован» до перезапуска приложения.
+func TestUnblockRestoresFriendshipSendsEvent(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+
+	if err := e.service.SendRequest(ctx, e.alice, e.bob); err != nil {
+		t.Fatalf("заявка: %v", err)
+	}
+	if err := e.service.Accept(ctx, e.bob, e.alice); err != nil {
+		t.Fatalf("принятие: %v", err)
+	}
+
+	pub := &recordingPublisher{}
+	e.service.SetPublisher(pub)
+
+	if err := e.service.SetBlocked(ctx, e.alice, e.bob, true); err != nil {
+		t.Fatalf("блокировка: %v", err)
+	}
+	if err := e.service.SetBlocked(ctx, e.alice, e.bob, false); err != nil {
+		t.Fatalf("снятие блокировки: %v", err)
+	}
+
+	got := pub.kinds()
+	want := []string{"RELATIONSHIP_REMOVE", "FRIEND_ACCEPT"}
+	if len(got) != len(want) {
+		t.Fatalf("событий %d (%v), ожидали %d (%v)", len(got), got, len(want), want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("событие %d: %q, ожидали %q", i, got[i], want[i])
+		}
+	}
+	if pub.events[1].users[0] != e.bob {
+		t.Fatalf("FRIEND_ACCEPT ушёл %v, ожидали bob", pub.events[1].users)
+	}
+}
+
 func TestSearchReportsRelation(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()

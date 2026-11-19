@@ -372,6 +372,11 @@ class ApiClient {
         response = await _http.post(uri, headers: headers, body: payload);
       case 'PATCH':
         response = await _http.patch(uri, headers: headers, body: payload);
+      // PUT нужен блокировке друзей: PUT /relationships/{id}/block.
+      // Без него запрос падал в ArgumentError ещё до сети — блокировка
+      // не отправлялась вовсе (нашлось при живом тесте 19.11.2026).
+      case 'PUT':
+        response = await _http.put(uri, headers: headers, body: payload);
       case 'DELETE':
         response = await _http.delete(uri, headers: headers);
       default:

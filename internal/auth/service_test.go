@@ -131,6 +131,36 @@ func TestRegisterValidatesInput(t *testing.T) {
 	}
 }
 
+func TestRegisterAllowsHyphenInUsername(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+
+	// Дефис разрешён с 19.11.2026: текст ошибки обещал его, а регулярка
+	// ранее отклоняла.
+	res, err := svc.Register(ctx, auth.RegisterInput{
+		Username: "pehkin-12",
+		Password: "very-long-password",
+	})
+	if err != nil {
+		t.Fatalf("регистрация с дефисом: %v", err)
+	}
+	if res.User.Username != "pehkin-12" {
+		t.Fatalf("username = %q, ожидали pehkin-12", res.User.Username)
+	}
+
+	// Верхний регистр по-прежнему приводится к нижнему.
+	res, err = svc.Register(ctx, auth.RegisterInput{
+		Username: "Test-User",
+		Password: "very-long-password",
+	})
+	if err != nil {
+		t.Fatalf("регистрация Test-User: %v", err)
+	}
+	if res.User.Username != "test-user" {
+		t.Fatalf("username = %q, ожидали test-user", res.User.Username)
+	}
+}
+
 func TestLoginRejectsWrongPassword(t *testing.T) {
 	svc := newTestService(t)
 	name := uniqueName(t)

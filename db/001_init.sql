@@ -43,7 +43,7 @@ CREATE TABLE users (
     deleted_at    timestamptz,
     -- citext сравнивает без учёта регистра; для формата нужен явный text
     CONSTRAINT users_username_lowercase CHECK (username::text = lower(username::text)),
-    CONSTRAINT users_username_format  CHECK (username::text ~ '^[a-z0-9_.]{2,32}$'),
+    CONSTRAINT users_username_format  CHECK (username::text ~ '^[a-z0-9_.-]{2,32}$'),
     CONSTRAINT users_email_format
         CHECK (email IS NULL OR email::text ~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$')
 );

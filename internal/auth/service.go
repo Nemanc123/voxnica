@@ -24,7 +24,7 @@ const (
 	maxPasswordLen = 256
 )
 
-var usernameRe = regexp.MustCompile(`^[a-z0-9_.]{2,32}$`)
+var usernameRe = regexp.MustCompile(`^[a-z0-9_.-]{2,32}$`)
 
 // dummyHash выравнивает время ответа при несуществующем пользователе.
 // Без него «нет такого» отвечает заметно быстрее, чем «неверный пароль»,

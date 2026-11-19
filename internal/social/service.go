@@ -271,14 +271,22 @@ func (s *Service) SetBlocked(ctx context.Context, actor, target string, blocked 
 	}
 
 	if blocked {
+		// Узнаём, была ли связь: событие об удалении нужно только тем,
+		// у кого в списке что-то было. Иначе блокировка незнакомца
+		// отправляла бы ему сигнал «вас заблокировали» (ревью 19.11.2026).
+		rel, err := s.store.RelationType(ctx, actor, target)
+		if err != nil {
+			return err
+		}
+
 		if err := s.store.BlockUser(ctx, actor, target); err != nil {
 			return err
 		}
-		// Заблокированный не должен узнать причину, но его список друзей
-		// обязан обновиться: иначе он продолжит видеть вас в «друзьях».
-		s.notify(ctx, []string{target}, "RELATIONSHIP_REMOVE", map[string]any{
-			"user_id": actor,
-		})
+		if rel != "" {
+			s.notify(ctx, []string{target}, "RELATIONSHIP_REMOVE", map[string]any{
+				"user_id": actor,
+			})
+		}
 		return nil
 	}
 	return s.store.UnblockUser(ctx, actor, target)

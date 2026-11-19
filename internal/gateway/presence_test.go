@@ -2,7 +2,9 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
+	"time"
 )
 
 type friendStub struct {
@@ -15,13 +17,13 @@ func (f friendStub) FriendIDs(context.Context, string) ([]string, error) { retur
 // IsOnline (нужен эндпоинту присутствия) и рассылку присутствия друзьям.
 func TestHubIsOnlineAndFriendPresence(t *testing.T) {
 	hub := NewHub()
-	hub.SetFriends(friendStub{ids: []string{"friend-1", "friend-2"}})
+	hub.SetFriends(friendStub{ids: []string{"friend-1"}})
 
 	if hub.IsOnline("user-1") {
 		t.Fatal("до подключения пользователь не в сети")
 	}
 
-	session := &Session{ID: "s1", UserID: "user-1", Guilds: nil}
+	session := &Session{ID: "s1", UserID: "user-1"}
 	client := newClient(hub, nil, session)
 	hub.Attach(session, client)
 
@@ -29,9 +31,34 @@ func TestHubIsOnlineAndFriendPresence(t *testing.T) {
 		t.Fatal("после Attach пользователь должен быть в сети")
 	}
 
-	// Друзья подписаны на личные события через byUser; для проверки
-	// достаточно того, что вызов не паникует и проходит через PublishToUsers.
-	hub.NotifyFriendsPresence(context.Background(), "user-1", "online")
+	// Друг подключён: событие должно дойти до его буфера.
+	friendSession := &Session{ID: "f1", UserID: "friend-1"}
+	friendClient := newClient(hub, nil, friendSession)
+	hub.Attach(friendSession, friendClient)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	hub.NotifyFriendsPresence(ctx, "user-1", "online")
+
+	select {
+	case raw := <-friendClient.send:
+		var env envelope
+		if err := json.Unmarshal(raw, &env); err != nil {
+			t.Fatalf("разбор события: %v", err)
+		}
+		if env.T != "PRESENCE_UPDATE" {
+			t.Fatalf("событие %q, ожидали PRESENCE_UPDATE", env.T)
+		}
+		data, ok := env.D.(map[string]any)
+		if !ok {
+			t.Fatalf("данные события не объект: %T", env.D)
+		}
+		if data["user_id"] != "user-1" || data["status"] != "online" {
+			t.Fatalf("неожиданные данные: %v", data)
+		}
+	case <-ctx.Done():
+		t.Fatal("событие присутствия другу не доставлено")
+	}
 
 	hub.Detach(session)
 	if hub.IsOnline("user-1") {

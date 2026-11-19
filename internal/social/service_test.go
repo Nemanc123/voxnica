@@ -450,6 +450,49 @@ func TestEventsGoToRightPeople(t *testing.T) {
 	}
 }
 
+func TestBlockStrangerSendsNoEvent(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+
+	pub := &recordingPublisher{}
+	e.service.SetPublisher(pub)
+
+	// С carol отношений не было: событие об удалении отправлять некому и незачем.
+	if err := e.service.SetBlocked(ctx, e.alice, e.carol, true); err != nil {
+		t.Fatalf("блокировка: %v", err)
+	}
+	if got := pub.kinds(); len(got) != 0 {
+		t.Fatalf("блокировка незнакомца не должна слать события, получено %v", got)
+	}
+}
+
+func TestBlockFriendSendsOneRemovalEvent(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+
+	if err := e.service.SendRequest(ctx, e.alice, e.bob); err != nil {
+		t.Fatalf("заявка: %v", err)
+	}
+	if err := e.service.Accept(ctx, e.bob, e.alice); err != nil {
+		t.Fatalf("принятие: %v", err)
+	}
+
+	pub := &recordingPublisher{}
+	e.service.SetPublisher(pub)
+
+	if err := e.service.SetBlocked(ctx, e.alice, e.bob, true); err != nil {
+		t.Fatalf("блокировка: %v", err)
+	}
+
+	got := pub.kinds()
+	if len(got) != 1 || got[0] != "RELATIONSHIP_REMOVE" {
+		t.Fatalf("ожидали одно RELATIONSHIP_REMOVE, получено %v", got)
+	}
+	if pub.events[0].users[0] != e.bob {
+		t.Fatalf("событие ушло %v, ожидали bob", pub.events[0].users)
+	}
+}
+
 func TestUnknownUserGivesNotFound(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()

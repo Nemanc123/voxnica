@@ -127,7 +127,15 @@ func (s *Service) SendRequest(ctx context.Context, actor, target string) error {
 		return ErrAlreadyPending
 	}
 
-	return s.store.RequestFriend(ctx, actor, target)
+	created, err := s.store.RequestFriend(ctx, actor, target)
+	if err != nil {
+		return err
+	}
+	if !created {
+		// Между проверкой и вставкой связь успела появиться (гонка).
+		return ErrAlreadyPending
+	}
+	return nil
 }
 
 // Accept принимает входящую заявку.
@@ -141,6 +149,15 @@ func (s *Service) Accept(ctx context.Context, actor, from string) error {
 		return err
 	}
 	if !ok {
+		// Заявки нет. Если второй успел заблокировать — отвечаем 403,
+		// а не 404: иначе клиент будет искать «пропавшую» заявку.
+		blocked, berr := s.store.BlockedEither(ctx, actor, from)
+		if berr != nil {
+			return berr
+		}
+		if blocked {
+			return ErrBlocked
+		}
 		return fmt.Errorf("%w: входящей заявки нет", ErrNotFound)
 	}
 	return nil
@@ -180,6 +197,12 @@ func (s *Service) SetBlocked(ctx context.Context, actor, target string, blocked 
 	return s.store.UnblockUser(ctx, actor, target)
 }
 
+// likeEscaper обезвреживает служебные символы LIKE.
+//
+// Без этого запрос `q=%%` проходит проверку длины и перечисляет
+// пользователей: `%` — шаблон «любая строка», а не символ.
+var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
 // Search ищет людей по логину или имени и подсказывает, какая связь уже есть.
 func (s *Service) Search(ctx context.Context, actor, query string) ([]SearchResult, error) {
 	q := strings.TrimSpace(query)
@@ -191,7 +214,7 @@ func (s *Service) Search(ctx context.Context, actor, query string) ([]SearchResu
 		q = string(runes[:maxSearchRunes])
 	}
 
-	users, err := s.store.SearchUsers(ctx, actor, q, maxSearchResults)
+	users, err := s.store.SearchUsers(ctx, actor, likeEscaper.Replace(q), maxSearchResults)
 	if err != nil {
 		return nil, err
 	}

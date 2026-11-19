@@ -29,10 +29,12 @@ type Relationship struct {
 }
 
 // Relationships возвращает все связи пользователя с именами собеседников.
+//
+// Почта и хеш пароля намеренно не выбираются: сервису они не нужны, а
+// лишние секреты в памяти — лишний риск, если кто-то сериализует User.
 func (s *Store) Relationships(ctx context.Context, userID string) ([]Relationship, error) {
 	const query = `
-		SELECT u.id::text, u.username::text, u.display_name, u.email::text,
-		       u.password_hash, u.status, u.created_at,
+		SELECT u.id::text, u.username::text, u.display_name, u.status, u.created_at,
 		       r.type, r.created_at
 		  FROM relationships r
 		  JOIN users u ON u.id = r.target_id
@@ -49,8 +51,8 @@ func (s *Store) Relationships(ctx context.Context, userID string) ([]Relationshi
 	for rows.Next() {
 		var rel Relationship
 		if err := rows.Scan(
-			&rel.User.ID, &rel.User.Username, &rel.User.DisplayName, &rel.User.Email,
-			&rel.User.PasswordHash, &rel.User.Status, &rel.User.CreatedAt,
+			&rel.User.ID, &rel.User.Username, &rel.User.DisplayName,
+			&rel.User.Status, &rel.User.CreatedAt,
 			&rel.Type, &rel.CreatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("чтение связи: %w", err)
@@ -116,19 +118,27 @@ func (s *Store) RelationTypes(ctx context.Context, actor string, targets []strin
 // RequestFriend создаёт заявку в обе стороны.
 //
 // Оба INSERT идут одним запросом: либо появятся обе строки, либо ни одной.
-// ON CONFLICT DO NOTHING — повторная заявка не ломает существующие связи;
-// что именно уже есть, проверяет сервис до вызова.
-func (s *Store) RequestFriend(ctx context.Context, from, to string) error {
+// Если связь уже есть (гонка двух одновременных заявок или повтор), строки
+// не меняются и возвращается false — сервис отвечает «заявка уже есть».
+// Дата обновляется при повторной заявке, чтобы «дружба с» отражала последнюю.
+func (s *Store) RequestFriend(ctx context.Context, from, to string) (bool, error) {
 	const query = `
-		INSERT INTO relationships (user_id, target_id, type)
-		VALUES ($1::uuid, $2::uuid, 'pending_out'),
-		       ($2::uuid, $1::uuid, 'pending_in')
-		ON CONFLICT (user_id, target_id) DO NOTHING`
+		WITH inserted AS (
+			INSERT INTO relationships (user_id, target_id, type)
+			VALUES ($1::uuid, $2::uuid, 'pending_out'),
+			       ($2::uuid, $1::uuid, 'pending_in')
+			ON CONFLICT (user_id, target_id) DO UPDATE
+			   SET created_at = now()
+			 WHERE relationships.type IN ('pending_in', 'pending_out')
+			RETURNING 1
+		)
+		SELECT count(*) FROM inserted`
 
-	if _, err := s.db.Exec(ctx, query, from, to); err != nil {
-		return fmt.Errorf("заявка в друзья: %w", err)
+	var n int
+	if err := s.db.QueryRow(ctx, query, from, to).Scan(&n); err != nil {
+		return false, fmt.Errorf("заявка в друзья: %w", err)
 	}
-	return nil
+	return n == 2, nil
 }
 
 // AcceptFriend переводит обе строки пары в friend.

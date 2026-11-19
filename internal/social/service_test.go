@@ -327,6 +327,39 @@ func TestSearchHidesUsersWhoBlockedMe(t *testing.T) {
 	}
 }
 
+func TestSearchWildcardIsEscaped(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+
+	// "%%" — это шаблон LIKE «любая строка», а не два символа.
+	// Если не экранировать, вернутся все пользователи.
+	results, err := e.service.Search(ctx, e.alice, "%%")
+	if err != nil {
+		t.Fatalf("поиск: %v", err)
+	}
+	if len(results) != 0 {
+		t.Fatalf("шаблон LIKE не должен перечислять пользователей, найдено %d", len(results))
+	}
+}
+
+func TestAcceptAfterBlockGivesForbidden(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+
+	if err := e.service.SendRequest(ctx, e.alice, e.bob); err != nil {
+		t.Fatalf("заявка: %v", err)
+	}
+
+	// bob блокирует alice, пока заявка висит.
+	if err := e.service.SetBlocked(ctx, e.bob, e.alice, true); err != nil {
+		t.Fatalf("блокировка: %v", err)
+	}
+
+	if err := e.service.Accept(ctx, e.bob, e.alice); !errors.Is(err, social.ErrBlocked) {
+		t.Fatalf("ожидали ErrBlocked, получили %v", err)
+	}
+}
+
 func TestSelfActionsRejected(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()

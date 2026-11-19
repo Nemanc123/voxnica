@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -12,13 +13,34 @@ import (
 	"github.com/Nemanc123/voxnica/internal/store"
 )
 
+// uuidPattern проверяет формат идентификатора до похода в базу.
+//
+// Без этой проверки значение вида `/relationships/abc` доходит до
+// `$1::uuid`, Postgres возвращает «invalid input syntax for type uuid»,
+// и клиент получает 500 вместо понятной 400.
+var uuidPattern = regexp.MustCompile(
+	`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`,
+)
+
+func validUserID(id string) bool { return uuidPattern.MatchString(id) }
+
 // SocialHandlers — друзья, заявки, блокировки и поиск людей.
 type SocialHandlers struct {
 	svc *social.Service
+
+	// Лимиты держим в памяти процесса: при нескольких экземплярах сервера
+	// они умножаются на их число. Так же устроен лимит входа (auth.go),
+	// и по той же причине — переезд в Redis отложен.
+	searchLimiter  *rateLimiter
+	requestLimiter *rateLimiter
 }
 
 func NewSocialHandlers(svc *social.Service) *SocialHandlers {
-	return &SocialHandlers{svc: svc}
+	return &SocialHandlers{
+		svc:            svc,
+		searchLimiter:  newRateLimiter(20, time.Minute),
+		requestLimiter: newRateLimiter(10, time.Hour),
+	}
 }
 
 // userCard — безопасное представление пользователя для ответа.
@@ -82,6 +104,11 @@ func (h *SocialHandlers) Act(w http.ResponseWriter, r *http.Request) {
 	userID, _ := UserIDFrom(r.Context())
 	target := chi.URLParam(r, "userID")
 
+	if !validUserID(target) {
+		writeError(w, http.StatusBadRequest, "validation_error", "неверный идентификатор пользователя")
+		return
+	}
+
 	var req relationshipActionRequest
 	if err := decodeJSON(w, r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "тело запроса должно быть JSON-объектом")
@@ -91,6 +118,10 @@ func (h *SocialHandlers) Act(w http.ResponseWriter, r *http.Request) {
 	var err error
 	switch req.Action {
 	case "request":
+		if !h.requestLimiter.Allow(userID) {
+			writeError(w, http.StatusTooManyRequests, "too_many_requests", "слишком много заявок, попробуйте позже")
+			return
+		}
 		err = h.svc.SendRequest(r.Context(), userID, target)
 	case "accept":
 		err = h.svc.Accept(r.Context(), userID, target)
@@ -112,6 +143,11 @@ func (h *SocialHandlers) Remove(w http.ResponseWriter, r *http.Request) {
 	userID, _ := UserIDFrom(r.Context())
 	target := chi.URLParam(r, "userID")
 
+	if !validUserID(target) {
+		writeError(w, http.StatusBadRequest, "validation_error", "неверный идентификатор пользователя")
+		return
+	}
+
 	if err := h.svc.Remove(r.Context(), userID, target); err != nil {
 		mapSocialError(w, err)
 		return
@@ -128,6 +164,11 @@ type blockRequest struct {
 func (h *SocialHandlers) Block(w http.ResponseWriter, r *http.Request) {
 	userID, _ := UserIDFrom(r.Context())
 	target := chi.URLParam(r, "userID")
+
+	if !validUserID(target) {
+		writeError(w, http.StatusBadRequest, "validation_error", "неверный идентификатор пользователя")
+		return
+	}
 
 	var req blockRequest
 	if err := decodeJSON(w, r, &req); err != nil {
@@ -155,6 +196,11 @@ type searchUserItem struct {
 // Search ищет людей по логину или имени.
 func (h *SocialHandlers) Search(w http.ResponseWriter, r *http.Request) {
 	userID, _ := UserIDFrom(r.Context())
+
+	if !h.searchLimiter.Allow(userID) {
+		writeError(w, http.StatusTooManyRequests, "too_many_requests", "слишком много запросов, попробуйте позже")
+		return
+	}
 
 	results, err := h.svc.Search(r.Context(), userID, r.URL.Query().Get("q"))
 	if err != nil {

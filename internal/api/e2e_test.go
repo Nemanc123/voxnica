@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -750,6 +751,13 @@ func TestRelationshipsFlow(t *testing.T) {
 	alice.mustDo("POST", "/api/v1/relationships/"+aliceID,
 		map[string]any{"action": "request"}, http.StatusBadRequest)
 
+	// 6.1. Невалидный идентификатор — понятная 400, а не 500 из ::uuid.
+	alice.mustDo("POST", "/api/v1/relationships/abc",
+		map[string]any{"action": "request"}, http.StatusBadRequest)
+	alice.mustDo("DELETE", "/api/v1/relationships/abc", nil, http.StatusBadRequest)
+	alice.mustDo("PUT", "/api/v1/relationships/abc/block",
+		map[string]any{"blocked": true}, http.StatusBadRequest)
+
 	// 7. Блокировка: заявка от заблокированного не проходит,
 	// и он больше не видит alice в поиске.
 	alice.mustDo("PUT", "/api/v1/relationships/"+bobID+"/block",
@@ -771,4 +779,41 @@ func TestRelationshipsFlow(t *testing.T) {
 	if got := len(list["friends"].([]any)); got != 0 {
 		t.Fatalf("после блокировки друзей %d, ожидали 0", got)
 	}
+}
+
+// TestSocialRateLimits проверяет, что поиск и заявки ограничены по частоте.
+//
+// Лимиты живут в памяти обработчика, поэтому здесь отдельный сервер:
+// в TestRelationshipsFlow счётчики уже израсходованы.
+func TestSocialRateLimits(t *testing.T) {
+	srv, _ := newTestServer(t, nil)
+	suffix := time.Now().UnixNano()
+
+	c := &client{t: t, base: srv.URL}
+	name := randomName(suffix, "rl")
+	c.mustDo("POST", "/api/v1/auth/register", map[string]any{
+		"username": name,
+		"password": "very-long-password",
+	}, http.StatusCreated)
+	login := c.mustDo("POST", "/api/v1/auth/login", map[string]any{
+		"login":    name,
+		"password": "very-long-password",
+	}, http.StatusOK)
+	c.token = login["access_token"].(string)
+
+	// Поиск: 20 в минуту.
+	for i := 0; i < 20; i++ {
+		c.mustDo("GET", "/api/v1/users/search?q=ab", nil, http.StatusOK)
+	}
+	c.mustDo("GET", "/api/v1/users/search?q=ab", nil, http.StatusTooManyRequests)
+
+	// Заявки: 10 в час. Каждый запрос уходит на несуществующего
+	// пользователя и получает 404, но лимит расходуется до похода в базу.
+	for i := 0; i < 10; i++ {
+		target := fmt.Sprintf("00000000-0000-0000-0000-%012d", i+1)
+		c.mustDo("POST", "/api/v1/relationships/"+target,
+			map[string]any{"action": "request"}, http.StatusNotFound)
+	}
+	c.mustDo("POST", "/api/v1/relationships/00000000-0000-0000-0000-000000000099",
+		map[string]any{"action": "request"}, http.StatusTooManyRequests)
 }

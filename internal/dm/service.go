@@ -48,8 +48,10 @@ type Channel struct {
 // Open возвращает личный канал с пользователем recipientID, создавая его
 // при необходимости.
 //
-// Ограничение: личный канал доступен только тем, у кого есть общий сервер.
-// Иначе любой мог бы писать незнакомым людям по username.
+// Писать можно любому зарегистрированному пользователю — без дружбы и без
+// общего сервера, как в Discord: человек находится поиском и сразу получает
+// диалог. Единственное ограничение — блокировка: если кто-то из двоих
+// заблокировал другого, диалог не открывается, и причина не раскрывается.
 func (s *Service) Open(ctx context.Context, actorID, recipientID string) (Channel, error) {
 	if recipientID == "" {
 		return Channel{}, fmt.Errorf("%w: нужен user_id получателя", ErrValidation)
@@ -66,12 +68,13 @@ func (s *Service) Open(ctx context.Context, actorID, recipientID string) (Channe
 		return Channel{}, err
 	}
 
-	shared, err := s.store.UsersShareGuild(ctx, actorID, recipient.ID)
+	blocked, err := s.store.BlockedEither(ctx, actorID, recipient.ID)
 	if err != nil {
 		return Channel{}, err
 	}
-	if !shared {
-		return Channel{}, fmt.Errorf("%w: нужен общий сервер", ErrForbidden)
+	if blocked {
+		// Тот же нейтральный ответ, что и при заявке в друзья.
+		return Channel{}, fmt.Errorf("%w: действие недоступно", ErrForbidden)
 	}
 
 	key := pairKey(actorID, recipient.ID)

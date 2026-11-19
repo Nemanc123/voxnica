@@ -126,9 +126,29 @@ func TestOpenCreatesOneChannelPerPair(t *testing.T) {
 	}
 }
 
-func TestOpenRequiresCommonGuild(t *testing.T) {
+func TestOpenWithStrangerAllowed(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
+
+	// Раньше требовался общий сервер. Теперь писать можно любому, как в
+	// Discord: единственное ограничение — блокировка.
+	ch, err := e.service.Open(ctx, e.owner, e.stranger)
+	if err != nil {
+		t.Fatalf("диалог с незнакомцем: %v", err)
+	}
+	if ch.ID == "" {
+		t.Fatal("канал не создан")
+	}
+}
+
+func TestOpenBlockedIsForbidden(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+
+	// Незнакомец блокирует владельца: открыть диалог нельзя.
+	if _, err := e.store.BlockUser(ctx, e.stranger, e.owner); err != nil {
+		t.Fatalf("блокировка: %v", err)
+	}
 
 	_, err := e.service.Open(ctx, e.owner, e.stranger)
 	if !errors.Is(err, dm.ErrForbidden) {

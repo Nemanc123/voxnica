@@ -58,6 +58,26 @@ class AppController extends ChangeNotifier {
   Channel? get channel => _channel;
   List<DmChannel> get dms => _dms;
   DmChannel? get dm => _dm;
+
+  /// Открыт ли «домашний» раздел личных сообщений (как в Discord).
+  ///
+  /// Когда true, сайдбар показывает поиск, «Друзья» и список диалогов,
+  /// а не каналы сервера.
+  bool get dmHome => _dmHome;
+  bool _dmHome = false;
+
+  /// Переключиться в раздел личных сообщений.
+  void openDmHome() {
+    _dmHome = true;
+    _guild = null;
+    _channels = const [];
+    _channel = null;
+    _dm = null;
+    _messages = const [];
+    _error = null;
+    notifyListeners();
+  }
+
   List<Message> get messages => _messages;
   List<GuildMember> get members =>
       _members.values.toList()
@@ -90,6 +110,7 @@ class AppController extends ChangeNotifier {
       _stage = AppStage.ready;
       await _loadGuilds();
       await _loadDms();
+      unawaited(friends.load());
       _startGateway();
     } else {
       _stage = AppStage.loggedOut;
@@ -128,6 +149,7 @@ class AppController extends ChangeNotifier {
       _stage = AppStage.ready;
       await _loadGuilds();
       await _loadDms();
+      unawaited(friends.load());
       _startGateway();
       return true;
     } on ApiException catch (e) {
@@ -199,6 +221,7 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> selectGuild(Guild guild) async {
+    _dmHome = false;
     _guild = guild;
     _channels = const [];
     _channel = null;
@@ -277,6 +300,7 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> selectDm(DmChannel dm) async {
+    _dmHome = true;
     _dm = dm;
     _dmUnread.remove(dm.id);
     _channel = Channel(

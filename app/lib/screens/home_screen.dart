@@ -21,52 +21,45 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final wide = MediaQuery.sizeOf(context).width >= 850;
 
+    Future<void> openChannel(Channel channel) async {
+      await controller.selectChannel(channel);
+      if (wide || !context.mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => ChannelScreen(controller: controller),
+        ),
+      );
+    }
+
+    Future<void> openDm(DmChannel dm) async {
+      await controller.selectDm(dm);
+      if (wide || !context.mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => ChannelScreen(controller: controller),
+        ),
+      );
+    }
+
+    final Widget sidebar = controller.dmHome
+        ? _DmHomeSidebar(controller: controller, onOpenDm: openDm)
+        : _ChannelSidebar(
+            controller: controller,
+            onOpenChannel: openChannel,
+            onOpenDm: openDm,
+          );
+
     return Scaffold(
       body: SafeArea(
-        child: Stack(
+        child: Row(
           children: [
-            Row(
-              children: [
-                _GuildRail(controller: controller),
-                if (wide) ...[
-                  SizedBox(
-                    width: 250,
-                    child: _ChannelSidebar(
-                      controller: controller,
-                      onOpenChannel: controller.selectChannel,
-                      onOpenDm: controller.selectDm,
-                    ),
-                  ),
-                  const VerticalDivider(width: 1, color: Color(0xFF1E1F22)),
-                  Expanded(child: ChannelPane(controller: controller)),
-                ] else
-                  Expanded(
-                    child: _ChannelSidebar(
-                      controller: controller,
-                      onOpenChannel: (channel) async {
-                        await controller.selectChannel(channel);
-                        if (!context.mounted) return;
-                        await Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) =>
-                                ChannelScreen(controller: controller),
-                          ),
-                        );
-                      },
-                      onOpenDm: (dm) async {
-                        await controller.selectDm(dm);
-                        if (!context.mounted) return;
-                        await Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) =>
-                                ChannelScreen(controller: controller),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-              ],
-            ),
+            _GuildRail(controller: controller),
+            if (wide) ...[
+              SizedBox(width: 250, child: sidebar),
+              const VerticalDivider(width: 1, color: Color(0xFF1E1F22)),
+              Expanded(child: ChannelPane(controller: controller)),
+            ] else
+              Expanded(child: sidebar),
           ],
         ),
       ),
@@ -87,6 +80,12 @@ class _GuildRail extends StatelessWidget {
       child: Column(
         children: [
           const SizedBox(height: 12),
+          IconButton(
+            tooltip: 'Личные сообщения',
+            onPressed: controller.openDmHome,
+            icon: const Icon(Icons.forum_outlined),
+            color: controller.dmHome ? kAccent : kOnline,
+          ),
           IconButton(
             tooltip: 'Друзья',
             onPressed: () => Navigator.of(context).push(
@@ -360,6 +359,334 @@ class _ChannelSidebar extends StatelessWidget {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(controller.error!)));
     }
+  }
+}
+
+/// Сайдбар «домашнего» раздела личных сообщений — как в Discord:
+/// поиск сверху, «Друзья» с бейджем, список диалогов с аватарами.
+class _DmHomeSidebar extends StatelessWidget {
+  const _DmHomeSidebar({required this.controller, required this.onOpenDm});
+
+  final AppController controller;
+  final Future<void> Function(DmChannel) onOpenDm;
+
+  @override
+  Widget build(BuildContext context) {
+    final selfId = controller.user?.id ?? '';
+
+    return Container(
+      color: kSidebar,
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(6),
+              onTap: () => _startChat(context),
+              child: Container(
+                height: 36,
+                decoration: BoxDecoration(
+                  color: kRail,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                alignment: Alignment.center,
+                child: const Text(
+                  'Найти или начать беседу',
+                  style: TextStyle(fontSize: 12, color: kTextMuted),
+                ),
+              ),
+            ),
+          ),
+          ListenableBuilder(
+            listenable: controller.friends,
+            builder: (context, _) {
+              final pending = controller.friends.pendingCount;
+              return ListTile(
+                dense: true,
+                leading: const Icon(Icons.people_alt, size: 20),
+                title: const Text(
+                  'Друзья',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                trailing: pending > 0
+                    ? Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: kDanger,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '$pending',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      )
+                    : null,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => FriendsScreen(controller: controller),
+                  ),
+                ),
+              );
+            },
+          ),
+          const Divider(height: 1, color: Color(0xFF1E1F22)),
+          Row(
+            children: [
+              const Expanded(child: _GroupLabel('ЛИЧНЫЕ СООБЩЕНИЯ')),
+              IconButton(
+                tooltip: 'Новый диалог',
+                onPressed: () => _startChat(context),
+                icon: const Icon(Icons.add, size: 18),
+              ),
+            ],
+          ),
+          Expanded(
+            child: controller.dms.isEmpty
+                ? const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: Text(
+                      'Нажмите «+», чтобы начать беседу',
+                      style: TextStyle(fontSize: 11, color: kTextMuted),
+                    ),
+                  )
+                : ListView.builder(
+                    itemCount: controller.dms.length,
+                    itemBuilder: (context, index) {
+                      final dm = controller.dms[index];
+                      return _DmHomeTile(
+                        dm: dm,
+                        selfId: selfId,
+                        unread: controller.dmUnread(dm.id),
+                        selected: controller.dm?.id == dm.id,
+                        onTap: () => onOpenDm(dm),
+                      );
+                    },
+                  ),
+          ),
+          _UserFooter(controller: controller),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _startChat(BuildContext context) async {
+    final userID = await showDialog<String>(
+      context: context,
+      builder: (_) => _StartChatDialog(controller: controller),
+    );
+    if (userID == null || !context.mounted) return;
+
+    final ok = await controller.startDm(userID);
+    if (!context.mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(controller.error ?? 'Не удалось начать беседу')),
+      );
+      return;
+    }
+    final dm = controller.dm;
+    if (dm != null) await onOpenDm(dm);
+  }
+}
+
+/// Строка диалога: аватар с инициалом, имя, подпись, счётчик.
+class _DmHomeTile extends StatelessWidget {
+  const _DmHomeTile({
+    required this.dm,
+    required this.selfId,
+    required this.unread,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final DmChannel dm;
+  final String selfId;
+  final int unread;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final other = dm.recipients.firstWhere(
+      (p) => p.userId != selfId,
+      orElse: () => dm.recipients.isEmpty
+          ? const DmParticipant(userId: '', username: '?')
+          : dm.recipients.first,
+    );
+    final title = dm.title(selfId);
+    final subtitle = dm.recipients.length > 2
+        ? '${dm.recipients.length} участника'
+        : '@${other.username}';
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      child: Material(
+        color: selected ? const Color(0xFF404249) : Colors.transparent,
+        borderRadius: BorderRadius.circular(6),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(6),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 16,
+                  backgroundColor: kAccent,
+                  child: Text(
+                    title.isEmpty ? '?' : title[0].toUpperCase(),
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          color: unread > 0 ? kTextPrimary : kTextMuted,
+                        ),
+                      ),
+                      Text(
+                        subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 11, color: kTextMuted),
+                      ),
+                    ],
+                  ),
+                ),
+                if (unread > 0)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: kDanger,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      unread > 99 ? '99+' : '$unread',
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Поиск человека, чтобы начать беседу. Возвращает user_id.
+class _StartChatDialog extends StatefulWidget {
+  const _StartChatDialog({required this.controller});
+
+  final AppController controller;
+
+  @override
+  State<_StartChatDialog> createState() => _StartChatDialogState();
+}
+
+class _StartChatDialogState extends State<_StartChatDialog> {
+  final _query = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.friends.search('');
+  }
+
+  @override
+  void dispose() {
+    _query.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final friends = widget.controller.friends;
+    return AlertDialog(
+      title: const Text('Начать беседу'),
+      content: SizedBox(
+        width: 360,
+        height: 320,
+        child: Column(
+          children: [
+            TextField(
+              controller: _query,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'Логин или имя',
+                helperText: 'Минимум 2 символа',
+              ),
+              onSubmitted: friends.search,
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: ListenableBuilder(
+                listenable: friends,
+                builder: (context, _) {
+                  if (friends.searching) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  if (friends.results.isEmpty) {
+                    return const Center(
+                      child: Text(
+                        'Введите минимум 2 символа и нажмите Enter',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 12, color: kTextMuted),
+                      ),
+                    );
+                  }
+                  return ListView.builder(
+                    itemCount: friends.results.length,
+                    itemBuilder: (context, index) {
+                      final result = friends.results[index];
+                      return ListTile(
+                        dense: true,
+                        title: Text(result.name),
+                        subtitle: Text(
+                          '@${result.username}',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: kTextMuted,
+                          ),
+                        ),
+                        onTap: () => Navigator.of(context).pop(result.id),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Отмена'),
+        ),
+      ],
+    );
   }
 }
 

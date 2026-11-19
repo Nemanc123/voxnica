@@ -23,6 +23,11 @@ class FriendsController extends ChangeNotifier {
   bool _searching = false;
   String? _error;
 
+  /// Последний запрос поиска: после блокировки или разблокировки результаты
+  /// нужно перезапросить, иначе кнопка в списке остаётся прежней и кажется,
+  /// что нажатие не сработало (нашлось при живом тесте 19.11.2026).
+  String _query = '';
+
   FriendsView get view => _view;
   Map<String, String> get presence => _presence;
   List<UserSearchResult> get results => _results;
@@ -59,6 +64,7 @@ class FriendsController extends ChangeNotifier {
 
   /// Очищает результаты поиска, не трогая список связей.
   void clearSearch() {
+    _query = '';
     _results = const [];
     notifyListeners();
   }
@@ -67,11 +73,13 @@ class FriendsController extends ChangeNotifier {
   Future<void> search(String query) async {
     final q = query.trim();
     if (q.length < 2) {
+      _query = '';
       _results = const [];
       notifyListeners();
       return;
     }
 
+    _query = q;
     _searching = true;
     _error = null;
     notifyListeners();
@@ -112,11 +120,28 @@ class FriendsController extends ChangeNotifier {
         _view = view;
       }
       notifyListeners();
+      // Связь изменилась — отношения в выдаче поиска тоже. Без перезапроса
+      // кнопка «Разблокировать» остаётся на месте, будто действие не прошло.
+      await _refreshSearch();
       return true;
     } catch (e) {
       _error = _describe(e);
       notifyListeners();
       return false;
+    }
+  }
+
+  /// Перезапрашивает последнюю поисковую выдачу, если она открыта.
+  ///
+  /// Ошибку здесь глотаем: связь уже изменена, а список поиска обновится
+  /// при следующем вводе — показывать два сообщения об ошибке незачем.
+  Future<void> _refreshSearch() async {
+    if (_query.isEmpty || _results.isEmpty) return;
+    try {
+      _results = await _api.searchUsers(_query);
+      notifyListeners();
+    } catch (_) {
+      // см. комментарий выше
     }
   }
 

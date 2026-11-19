@@ -123,25 +123,49 @@ class _FriendsScreenState extends State<FriendsScreen> {
         }
         return _friendsList(online);
       default:
-        if (_friends.view.friends.isEmpty) {
-          return const _Empty(
-            text: 'Пока нет друзей. Перейдите на вкладку «Добавить в друзья».',
-          );
-        }
-        return _friendsList(_friends.view.friends);
+        return _allTab();
     }
   }
 
-  Widget _friendsList(List<RelationshipEntry> entries) {
-    // В сети — сверху.
-    final sorted = [...entries]
-      ..sort((a, b) {
-        final ao = _friends.isOnline(a.user.id) ? 0 : 1;
-        final bo = _friends.isOnline(b.user.id) ? 0 : 1;
-        if (ao != bo) return ao - bo;
-        return a.user.name.toLowerCase().compareTo(b.user.name.toLowerCase());
-      });
+  /// Вкладка «Все»: друзья, ниже — заблокированные.
+  ///
+  /// Заблокированные раньше были видны только через поиск по логину:
+  /// снять блокировку можно было, лишь вспомнив, кого блокировал.
+  Widget _allTab() {
+    final friends = _friends.view.friends;
+    final blocked = _friends.view.blocked;
 
+    if (friends.isEmpty && blocked.isEmpty) {
+      return const _Empty(
+        text: 'Пока нет друзей. Перейдите на вкладку «Добавить в друзья».',
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      children: [
+        if (friends.isNotEmpty)
+          ..._sorted(friends).map((e) => _friendTile(e.user)),
+        if (blocked.isNotEmpty) ...[
+          const _GroupLabel('ЗАБЛОКИРОВАННЫЕ'),
+          ...blocked.map(_blockedTile),
+        ],
+      ],
+    );
+  }
+
+  /// В сети — сверху, затем по имени.
+  List<RelationshipEntry> _sorted(List<RelationshipEntry> entries) {
+    return [...entries]..sort((a, b) {
+      final ao = _friends.isOnline(a.user.id) ? 0 : 1;
+      final bo = _friends.isOnline(b.user.id) ? 0 : 1;
+      if (ao != bo) return ao - bo;
+      return a.user.name.toLowerCase().compareTo(b.user.name.toLowerCase());
+    });
+  }
+
+  Widget _friendsList(List<RelationshipEntry> entries) {
+    final sorted = _sorted(entries);
     return ListView.builder(
       padding: const EdgeInsets.symmetric(vertical: 8),
       itemCount: sorted.length,
@@ -149,6 +173,26 @@ class _FriendsScreenState extends State<FriendsScreen> {
         final entry = sorted[index];
         return _friendTile(entry.user);
       },
+    );
+  }
+
+  Widget _blockedTile(RelationshipEntry entry) {
+    final user = entry.user;
+    return ListTile(
+      leading: _avatar(user),
+      title: Text(user.name),
+      subtitle: const Text(
+        'Заблокирован',
+        style: TextStyle(fontSize: 12, color: kTextMuted),
+      ),
+      trailing: TextButton(
+        onPressed: () => _run(
+          () => _friends.setBlocked(user.id, false),
+          'Не удалось разблокировать',
+          success: 'Разблокирован',
+        ),
+        child: const Text('Разблокировать'),
+      ),
     );
   }
 
@@ -335,6 +379,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
           onPressed: () => _run(
             () => _friends.setBlocked(result.id, false),
             'Не удалось разблокировать',
+            success: 'Разблокирован',
           ),
           child: const Text('Разблокировать'),
         );
@@ -389,16 +434,27 @@ class _FriendsScreenState extends State<FriendsScreen> {
         await _run(
           () => _friends.setBlocked(user.id, true),
           'Не удалось заблокировать',
+          success: 'Заблокирован',
         );
     }
   }
 
-  Future<void> _run(Future<bool> Function() action, String failure) async {
+  Future<void> _run(
+    Future<bool> Function() action,
+    String failure, {
+    String? success,
+  }) async {
     final ok = await action();
     if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
     if (!ok) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(_friends.error ?? failure)));
+      messenger.showSnackBar(
+        SnackBar(content: Text(_friends.error ?? failure)),
+      );
+    } else if (success != null) {
+      // Без подтверждения успешное действие выглядит как «ничего не вышло»,
+      // особенно когда строка в списке не исчезает.
+      messenger.showSnackBar(SnackBar(content: Text(success)));
     }
   }
 

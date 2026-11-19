@@ -181,25 +181,33 @@ func (s *Store) DeleteRelationshipPair(ctx context.Context, a, b string) error {
 
 // BlockUser ставит блокировку from → to и убирает обратную строку.
 //
-// Одним запросом: иначе между DELETE и INSERT остаётся окно, в котором
-// заблокированный успевает отправить заявку.
-func (s *Store) BlockUser(ctx context.Context, from, to string) error {
+// Возвращает тип связи, который был до блокировки ("" если связи не было).
+// Проверка и запись идут одним запросом: иначе между чтением и вставкой
+// остаётся окно, в котором можно успеть отправить заявку, а событие об
+// удалении уже не отправится (ревью 19.11.2026).
+func (s *Store) BlockUser(ctx context.Context, from, to string) (string, error) {
 	const query = `
 		WITH removed AS (
 			DELETE FROM relationships
 			 WHERE user_id = $2::uuid AND target_id = $1::uuid
+			RETURNING 1
+		), previous AS (
+			SELECT type FROM relationships
+			 WHERE user_id = $1::uuid AND target_id = $2::uuid
 		), blocked AS (
 			INSERT INTO relationships (user_id, target_id, type)
 			VALUES ($1::uuid, $2::uuid, 'blocked')
 			ON CONFLICT (user_id, target_id)
 			DO UPDATE SET type = 'blocked', created_at = now()
+			RETURNING 1
 		)
-		SELECT 1`
+		SELECT coalesce((SELECT type FROM previous), '')`
 
-	if _, err := s.db.Exec(ctx, query, from, to); err != nil {
-		return fmt.Errorf("блокировка: %w", err)
+	var prev string
+	if err := s.db.QueryRow(ctx, query, from, to).Scan(&prev); err != nil {
+		return "", fmt.Errorf("блокировка: %w", err)
 	}
-	return nil
+	return prev, nil
 }
 
 // UnblockUser снимает блокировку from → to. Дружба не восстанавливается.

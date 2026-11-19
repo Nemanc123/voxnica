@@ -493,6 +493,34 @@ func TestBlockFriendSendsOneRemovalEvent(t *testing.T) {
 	}
 }
 
+func TestRepeatedBlockSendsOneEvent(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+
+	if err := e.service.SendRequest(ctx, e.alice, e.bob); err != nil {
+		t.Fatalf("заявка: %v", err)
+	}
+	if err := e.service.Accept(ctx, e.bob, e.alice); err != nil {
+		t.Fatalf("принятие: %v", err)
+	}
+
+	pub := &recordingPublisher{}
+	e.service.SetPublisher(pub)
+
+	// Дважды блокируем одного и того же: второе нажатие не должно слать
+	// второе событие — блокировка уже стоит.
+	if err := e.service.SetBlocked(ctx, e.alice, e.bob, true); err != nil {
+		t.Fatalf("первая блокировка: %v", err)
+	}
+	if err := e.service.SetBlocked(ctx, e.alice, e.bob, true); err != nil {
+		t.Fatalf("повторная блокировка: %v", err)
+	}
+
+	if got := pub.kinds(); len(got) != 1 {
+		t.Fatalf("ожидали одно событие, получено %v", got)
+	}
+}
+
 func TestUnknownUserGivesNotFound(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()

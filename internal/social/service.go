@@ -1,0 +1,247 @@
+// Package social — друзья, заявки и блокировки.
+//
+// Правила живут здесь, а не в HTTP-слое: API только разбирает запрос и
+// переводит ошибки в коды. Так правила можно проверить тестами без сервера.
+package social
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/Nemanc123/voxnica/internal/store"
+)
+
+var (
+	ErrValidation     = errors.New("неверные данные")
+	ErrNotFound       = errors.New("не найдено")
+	ErrAlreadyFriends = errors.New("уже друзья")
+	ErrAlreadyPending = errors.New("заявка уже отправлена")
+	ErrBlocked        = errors.New("действие недоступно")
+)
+
+const (
+	// maxSearchResults ограничивает выдачу поиска: это не каталог людей.
+	maxSearchResults = 10
+	minSearchRunes   = 2
+	maxSearchRunes   = 32
+)
+
+type Service struct {
+	store *store.Store
+}
+
+func NewService(st *store.Store) *Service {
+	return &Service{store: st}
+}
+
+// Entry — человек в списке связей и дата, когда связь появилась.
+type Entry struct {
+	User  store.User
+	Since time.Time
+}
+
+// View — всё, что нужно экрану «Друзья» одним ответом.
+type View struct {
+	Friends  []Entry
+	Incoming []Entry
+	Outgoing []Entry
+	Blocked  []Entry
+}
+
+// SearchResult — найденный пользователь и его отношение к ищущему.
+type SearchResult struct {
+	User     store.User
+	Relation string // none | friend | incoming | outgoing | blocked
+}
+
+// List собирает связи пользователя по четырём корзинам.
+func (s *Service) List(ctx context.Context, actor string) (View, error) {
+	rels, err := s.store.Relationships(ctx, actor)
+	if err != nil {
+		return View{}, err
+	}
+
+	view := View{
+		Friends:  make([]Entry, 0, len(rels)),
+		Incoming: make([]Entry, 0, 4),
+		Outgoing: make([]Entry, 0, 4),
+		Blocked:  make([]Entry, 0, 2),
+	}
+
+	for _, rel := range rels {
+		entry := Entry{User: rel.User, Since: rel.CreatedAt}
+		switch rel.Type {
+		case store.RelationFriend:
+			view.Friends = append(view.Friends, entry)
+		case store.RelationPendingIn:
+			view.Incoming = append(view.Incoming, entry)
+		case store.RelationPendingOut:
+			view.Outgoing = append(view.Outgoing, entry)
+		case store.RelationBlocked:
+			view.Blocked = append(view.Blocked, entry)
+		}
+	}
+
+	return view, nil
+}
+
+// SendRequest отправляет заявку в друзья.
+//
+// Входящая заявка от того же человека не ошибка «уже отправлено»: клиент
+// по этому признаку предлагает её принять. Но и второй заявки не создаём.
+func (s *Service) SendRequest(ctx context.Context, actor, target string) error {
+	if target == "" {
+		return fmt.Errorf("%w: нужен пользователь", ErrValidation)
+	}
+	if actor == target {
+		return fmt.Errorf("%w: нельзя добавить себя", ErrValidation)
+	}
+
+	if _, err := s.store.UserByID(ctx, target); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return ErrNotFound
+		}
+		return err
+	}
+
+	blocked, err := s.store.BlockedEither(ctx, actor, target)
+	if err != nil {
+		return err
+	}
+	if blocked {
+		// Ответ нейтральный: не раскрываем, кто кого заблокировал.
+		return ErrBlocked
+	}
+
+	rel, err := s.store.RelationType(ctx, actor, target)
+	if err != nil {
+		return err
+	}
+	switch rel {
+	case store.RelationFriend:
+		return ErrAlreadyFriends
+	case store.RelationPendingOut, store.RelationPendingIn:
+		return ErrAlreadyPending
+	}
+
+	return s.store.RequestFriend(ctx, actor, target)
+}
+
+// Accept принимает входящую заявку.
+func (s *Service) Accept(ctx context.Context, actor, from string) error {
+	if from == "" || actor == from {
+		return fmt.Errorf("%w: неверная пара пользователей", ErrValidation)
+	}
+
+	ok, err := s.store.AcceptFriend(ctx, actor, from)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("%w: входящей заявки нет", ErrNotFound)
+	}
+	return nil
+}
+
+// Remove удаляет любую связь пары: дружбу, заявку или отказ.
+//
+// Повторный вызов не ошибка — удалять уже нечего.
+func (s *Service) Remove(ctx context.Context, actor, other string) error {
+	if other == "" || actor == other {
+		return fmt.Errorf("%w: неверная пара пользователей", ErrValidation)
+	}
+	return s.store.DeleteRelationshipPair(ctx, actor, other)
+}
+
+// SetBlocked ставит или снимает блокировку actor → target.
+//
+// Снятие блокировки дружбу не восстанавливает: нужно заново отправить заявку.
+func (s *Service) SetBlocked(ctx context.Context, actor, target string, blocked bool) error {
+	if target == "" {
+		return fmt.Errorf("%w: нужен пользователь", ErrValidation)
+	}
+	if actor == target {
+		return fmt.Errorf("%w: нельзя заблокировать себя", ErrValidation)
+	}
+
+	if _, err := s.store.UserByID(ctx, target); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return ErrNotFound
+		}
+		return err
+	}
+
+	if blocked {
+		return s.store.BlockUser(ctx, actor, target)
+	}
+	return s.store.UnblockUser(ctx, actor, target)
+}
+
+// Search ищет людей по логину или имени и подсказывает, какая связь уже есть.
+func (s *Service) Search(ctx context.Context, actor, query string) ([]SearchResult, error) {
+	q := strings.TrimSpace(query)
+	runes := []rune(q)
+	if len(runes) < minSearchRunes {
+		return nil, fmt.Errorf("%w: минимум %d символа", ErrValidation, minSearchRunes)
+	}
+	if len(runes) > maxSearchRunes {
+		q = string(runes[:maxSearchRunes])
+	}
+
+	users, err := s.store.SearchUsers(ctx, actor, q, maxSearchResults)
+	if err != nil {
+		return nil, err
+	}
+
+	ids := make([]string, 0, len(users))
+	for _, u := range users {
+		ids = append(ids, u.ID)
+	}
+
+	types, err := s.store.RelationTypes(ctx, actor, ids)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]SearchResult, 0, len(users))
+	for _, u := range users {
+		out = append(out, SearchResult{User: u, Relation: relationName(types[u.ID])})
+	}
+
+	return out, nil
+}
+
+// CanDM отвечает, можно ли открыть личный диалог и звонить.
+//
+// Разрешено только друзьям: иначе любой, кто знает логин, может писать
+// и звонить. Заблокированные и незнакомые — нельзя.
+func (s *Service) CanDM(ctx context.Context, actor, target string) (bool, error) {
+	if actor == "" || target == "" || actor == target {
+		return false, nil
+	}
+
+	rel, err := s.store.RelationType(ctx, actor, target)
+	if err != nil {
+		return false, err
+	}
+	return rel == store.RelationFriend, nil
+}
+
+// relationName переводит тип строки в термин для клиента.
+func relationName(stored string) string {
+	switch stored {
+	case store.RelationFriend:
+		return "friend"
+	case store.RelationPendingIn:
+		return "incoming"
+	case store.RelationPendingOut:
+		return "outgoing"
+	case store.RelationBlocked:
+		return "blocked"
+	default:
+		return "none"
+	}
+}

@@ -24,6 +24,7 @@ type Deps struct {
 	Gateway  http.Handler
 	Voice    *VoiceHandlers
 	DM       *DMHandlers
+	Social   *SocialHandlers
 }
 
 func NewRouter(d Deps) http.Handler {
@@ -85,6 +86,15 @@ func NewRouter(d Deps) http.Handler {
 			if d.DM != nil {
 				r.Post("/dms", d.DM.Open)
 				r.Get("/dms", d.DM.List)
+			}
+
+			// Друзья, заявки и блокировки.
+			if d.Social != nil {
+				r.Get("/relationships", d.Social.List)
+				r.Post("/relationships/{userID}", d.Social.Act)
+				r.Delete("/relationships/{userID}", d.Social.Remove)
+				r.Put("/relationships/{userID}/block", d.Social.Block)
+				r.Get("/users/search", d.Social.Search)
 			}
 
 			// Сообщения.

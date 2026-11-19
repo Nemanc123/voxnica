@@ -31,6 +31,7 @@ import (
 	"github.com/Nemanc123/voxnica/internal/fanout"
 	"github.com/Nemanc123/voxnica/internal/gateway"
 	"github.com/Nemanc123/voxnica/internal/guild"
+	"github.com/Nemanc123/voxnica/internal/social"
 	"github.com/Nemanc123/voxnica/internal/storage"
 	"github.com/Nemanc123/voxnica/internal/store"
 	"github.com/Nemanc123/voxnica/internal/voice"
@@ -97,6 +98,9 @@ func run() error {
 	dmService := dm.NewService(store.NewWithPool(pool))
 	dmHandlers := api.NewDMHandlers(dmService)
 
+	socialService := social.NewService(store.NewWithPool(pool))
+	socialHandlers := api.NewSocialHandlers(socialService)
+
 	hub := gateway.NewHub()
 	hub.SetFilter(gateway.NewCachedFilter(guildService, 10*time.Second))
 
@@ -159,6 +163,7 @@ func run() error {
 			Gateway:  gatewayHandler,
 			Voice:    api.NewVoiceHandlers(voiceService),
 			DM:       dmHandlers,
+			Social:   socialHandlers,
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,

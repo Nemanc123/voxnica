@@ -24,6 +24,7 @@ import (
 	"github.com/Nemanc123/voxnica/internal/chat"
 	"github.com/Nemanc123/voxnica/internal/gateway"
 	"github.com/Nemanc123/voxnica/internal/guild"
+	"github.com/Nemanc123/voxnica/internal/social"
 	"github.com/Nemanc123/voxnica/internal/storage"
 	"github.com/Nemanc123/voxnica/internal/store"
 	"github.com/Nemanc123/voxnica/internal/voice"
@@ -130,6 +131,7 @@ func newTestServer(t *testing.T, files *storage.Storage) (*httptest.Server, *cha
 		Messages: api.NewMessageHandlers(chatSvc),
 		Presence: api.NewPresenceHandlers(hub, gs),
 		Voice:    api.NewVoiceHandlers(voiceSvc),
+		Social:   api.NewSocialHandlers(social.NewService(st)),
 	})
 
 	srv := httptest.NewServer(router)
@@ -652,4 +654,117 @@ func e2eWebhook(t *testing.T, base, token string, body []byte) int {
 	}
 	_ = resp.Body.Close()
 	return resp.StatusCode
+}
+
+// TestRelationshipsFlow проверяет друзей через HTTP: заявка, принятие,
+// поиск, блокировка и запрет на действия с самим собой.
+func TestRelationshipsFlow(t *testing.T) {
+	srv, _ := newTestServer(t, nil)
+	suffix := time.Now().UnixNano()
+
+	alice := &client{t: t, base: srv.URL}
+	bob := &client{t: t, base: srv.URL}
+
+	aliceName := randomName(suffix, "a")
+	bobName := randomName(suffix, "b")
+
+	alice.mustDo("POST", "/api/v1/auth/register", map[string]any{
+		"username": aliceName,
+		"password": "very-long-password",
+	}, http.StatusCreated)
+	bob.mustDo("POST", "/api/v1/auth/register", map[string]any{
+		"username": bobName,
+		"password": "very-long-password",
+	}, http.StatusCreated)
+
+	aliceLogin := alice.mustDo("POST", "/api/v1/auth/login", map[string]any{
+		"login":    aliceName,
+		"password": "very-long-password",
+	}, http.StatusOK)
+	alice.token = aliceLogin["access_token"].(string)
+	aliceID := aliceLogin["user"].(map[string]any)["id"].(string)
+
+	bobLogin := bob.mustDo("POST", "/api/v1/auth/login", map[string]any{
+		"login":    bobName,
+		"password": "very-long-password",
+	}, http.StatusOK)
+	bob.token = bobLogin["access_token"].(string)
+	bobID := bobLogin["user"].(map[string]any)["id"].(string)
+
+	// 1. Списки пустые.
+	list := alice.mustDo("GET", "/api/v1/relationships", nil, http.StatusOK)
+	if got := len(list["friends"].([]any)); got != 0 {
+		t.Fatalf("друзей %d, ожидали 0", got)
+	}
+
+	// 2. Заявка от alice к bob.
+	alice.mustDo("POST", "/api/v1/relationships/"+bobID,
+		map[string]any{"action": "request"}, http.StatusNoContent)
+
+	list = bob.mustDo("GET", "/api/v1/relationships", nil, http.StatusOK)
+	if got := len(list["incoming"].([]any)); got != 1 {
+		t.Fatalf("входящих %d, ожидали 1", got)
+	}
+
+	// 3. Повторная заявка — конфликт.
+	alice.mustDo("POST", "/api/v1/relationships/"+bobID,
+		map[string]any{"action": "request"}, http.StatusConflict)
+
+	// 4. Принятие.
+	bob.mustDo("POST", "/api/v1/relationships/"+aliceID,
+		map[string]any{"action": "accept"}, http.StatusNoContent)
+
+	list = alice.mustDo("GET", "/api/v1/relationships", nil, http.StatusOK)
+	friends := list["friends"].([]any)
+	if len(friends) != 1 {
+		t.Fatalf("друзей %d, ожидали 1", len(friends))
+	}
+	friend := friends[0].(map[string]any)["user"].(map[string]any)
+	if friend["id"] != bobID {
+		t.Fatalf("друг %v, ожидали %s", friend["id"], bobID)
+	}
+	if _, leaked := friend["email"]; leaked {
+		t.Fatal("в ответе не должно быть почты")
+	}
+
+	// 5. Поиск показывает отношение.
+	found := bob.mustDo("GET", "/api/v1/users/search?q="+aliceName, nil, http.StatusOK)
+	users := found["users"].([]any)
+	if len(users) == 0 {
+		t.Fatal("поиск по логину ничего не нашёл")
+	}
+	if got := users[0].(map[string]any)["relation"]; got != "friend" {
+		t.Fatalf("отношение %v, ожидали friend", got)
+	}
+
+	// 6. Кривой ввод.
+	alice.mustDo("POST", "/api/v1/relationships/"+bobID,
+		map[string]any{"action": "teleport"}, http.StatusBadRequest)
+	alice.mustDo("GET", "/api/v1/users/search?q=a", nil, http.StatusBadRequest)
+	alice.mustDo("POST", "/api/v1/relationships/00000000-0000-0000-0000-000000000000",
+		map[string]any{"action": "request"}, http.StatusNotFound)
+	alice.mustDo("POST", "/api/v1/relationships/"+aliceID,
+		map[string]any{"action": "request"}, http.StatusBadRequest)
+
+	// 7. Блокировка: заявка от заблокированного не проходит,
+	// и он больше не видит alice в поиске.
+	alice.mustDo("PUT", "/api/v1/relationships/"+bobID+"/block",
+		map[string]any{"blocked": true}, http.StatusNoContent)
+
+	bob.mustDo("POST", "/api/v1/relationships/"+aliceID,
+		map[string]any{"action": "request"}, http.StatusForbidden)
+
+	found = bob.mustDo("GET", "/api/v1/users/search?q="+aliceName, nil, http.StatusOK)
+	if got := len(found["users"].([]any)); got != 0 {
+		t.Fatalf("заблокировавший не должен находиться в поиске, найдено %d", got)
+	}
+
+	// 8. Снятие блокировки не восстанавливает дружбу.
+	alice.mustDo("PUT", "/api/v1/relationships/"+bobID+"/block",
+		map[string]any{"blocked": false}, http.StatusNoContent)
+
+	list = alice.mustDo("GET", "/api/v1/relationships", nil, http.StatusOK)
+	if got := len(list["friends"].([]any)); got != 0 {
+		t.Fatalf("после блокировки друзей %d, ожидали 0", got)
+	}
 }

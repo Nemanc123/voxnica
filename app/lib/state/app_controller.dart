@@ -110,6 +110,7 @@ class AppController extends ChangeNotifier {
       _stage = AppStage.ready;
       await _loadGuilds();
       await _loadDms();
+      friends.reset();
       unawaited(friends.load());
       _startGateway();
     } else {
@@ -147,6 +148,9 @@ class AppController extends ChangeNotifier {
       final session = await action();
       _user = session.user;
       _stage = AppStage.ready;
+      // Пустая выдача поиска: после прошлого аккаунта там могли остаться
+      // чужие строки (P-48).
+      friends.reset();
       await _loadGuilds();
       await _loadDms();
       unawaited(friends.load());
@@ -172,6 +176,10 @@ class AppController extends ChangeNotifier {
     await gateway?.dispose();
 
     await api.logout();
+
+    // Друзья живут в отдельном контроллере и переживают выход: без сброса
+    // следующий аккаунт увидит чужие результаты поиска и списки (P-48).
+    friends.reset();
 
     _user = null;
     _guilds = const [];

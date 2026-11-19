@@ -62,6 +62,22 @@ class FriendsController extends ChangeNotifier {
     }
   }
 
+  /// Полный сброс состояния перед сменой аккаунта.
+  ///
+  /// Без него после выхода остаются результаты поиска прошлого пользователя:
+  /// в «Добавить в друзья» видна чужая строка с кнопкой «Разблокировать»,
+  /// и кажется, что предлагают разблокировать самого себя (P-48).
+  void reset() {
+    _view = const FriendsView.empty();
+    _presence = const {};
+    _results = const [];
+    _query = '';
+    _loading = false;
+    _searching = false;
+    _error = null;
+    notifyListeners();
+  }
+
   /// Очищает результаты поиска, не трогая список связей.
   void clearSearch() {
     _query = '';

@@ -99,4 +99,59 @@ void main() {
     expect(searches, 2, reason: 'выдача поиска должна обновиться');
     expect(friends.results.single.relation, 'none');
   });
+
+  test('reset очищает поиск и списки после смены аккаунта', () async {
+    final api = await buildClient(
+      handler: (request) async {
+        final path = request.url.path;
+
+        if (request.method == 'GET' && path == '/api/v1/relationships') {
+          return json({
+            'friends': <Object>[],
+            'incoming': <Object>[],
+            'outgoing': <Object>[],
+            'blocked': [
+              {
+                'user': {'id': 'u2', 'username': 'bob'},
+                'since': null,
+              },
+            ],
+          });
+        }
+
+        if (request.method == 'GET' &&
+            path == '/api/v1/relationships/presence') {
+          return json({
+            'presence': {'u2': 'online'},
+          });
+        }
+
+        if (request.method == 'GET' && path == '/api/v1/users/search') {
+          return json({
+            'users': [
+              {'id': 'u2', 'username': 'bob', 'relation': 'blocked'},
+            ],
+          });
+        }
+
+        throw StateError('неожиданный запрос: ${request.method} $path');
+      },
+    );
+
+    final friends = FriendsController(api);
+    await friends.load();
+    await friends.search('bob');
+
+    expect(friends.results, isNotEmpty);
+    expect(friends.view.blocked, isNotEmpty);
+    expect(friends.presence, isNotEmpty);
+
+    friends.reset();
+
+    expect(friends.results, isEmpty);
+    expect(friends.view.blocked, isEmpty);
+    expect(friends.view.friends, isEmpty);
+    expect(friends.presence, isEmpty);
+    expect(friends.error, isNull);
+  });
 }

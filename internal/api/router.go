@@ -91,6 +91,7 @@ func NewRouter(d Deps) http.Handler {
 			// Друзья, заявки и блокировки.
 			if d.Social != nil {
 				r.Get("/relationships", d.Social.List)
+				r.Get("/relationships/presence", d.Social.Presence)
 				r.Post("/relationships/{userID}", d.Social.Act)
 				r.Delete("/relationships/{userID}", d.Social.Remove)
 				r.Put("/relationships/{userID}/block", d.Social.Block)

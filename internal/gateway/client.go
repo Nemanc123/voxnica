@@ -115,6 +115,7 @@ func (c *Client) readPump() {
 					"status":  "offline",
 				})
 			}
+			c.hub.NotifyFriendsPresence(ctx, c.session.UserID, "offline")
 			cancel()
 		}
 		c.close()

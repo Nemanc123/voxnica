@@ -31,10 +31,60 @@ const (
 
 type Service struct {
 	store *store.Store
+
+	// pub задаётся после старта: hub и fan-out создаются позже сервиса.
+	// До установки события просто не отправляются — это не ошибка,
+	// а режим тестов и одиночного процесса без Redis.
+	pub UserPublisher
+}
+
+// UserPublisher — адресная доставка событий конкретным пользователям.
+// Реализуют gateway.Hub и fanout.Publisher.
+type UserPublisher interface {
+	PublishToUsers(ctx context.Context, userIDs []string, eventType string, data any)
 }
 
 func NewService(st *store.Store) *Service {
 	return &Service{store: st}
+}
+
+// SetPublisher включает живые события дружбы и присутствия.
+func (s *Service) SetPublisher(pub UserPublisher) {
+	s.pub = pub
+}
+
+// FriendIDs отдаёт идентификаторы друзей — нужно хабу для рассылки
+// присутствия (интерфейс gateway.FriendIDsProvider).
+func (s *Service) FriendIDs(ctx context.Context, userID string) ([]string, error) {
+	rels, err := s.store.Relationships(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]string, 0, len(rels))
+	for _, rel := range rels {
+		if rel.Type == store.RelationFriend {
+			out = append(out, rel.User.ID)
+		}
+	}
+	return out, nil
+}
+
+// notify отправляет событие, если издатель подключён.
+func (s *Service) notify(ctx context.Context, userIDs []string, eventType string, data any) {
+	if s.pub == nil || len(userIDs) == 0 {
+		return
+	}
+	s.pub.PublishToUsers(ctx, userIDs, eventType, data)
+}
+
+// userPayload — то, что нужно клиенту для отрисовки карточки.
+func userPayload(u store.User) map[string]any {
+	out := map[string]any{"id": u.ID, "username": u.Username}
+	if u.DisplayName != nil && strings.TrimSpace(*u.DisplayName) != "" {
+		out["display_name"] = *u.DisplayName
+	}
+	return out
 }
 
 // Entry — человек в списке связей и дата, когда связь появилась.
@@ -132,8 +182,14 @@ func (s *Service) SendRequest(ctx context.Context, actor, target string) error {
 		return err
 	}
 	if !created {
-		// Между проверкой и вставкой связь успела появиться (гонка).
+		// Между проверкой и вставка связь успела появиться (гонка).
 		return ErrAlreadyPending
+	}
+
+	if actorUser, err := s.store.UserByID(ctx, actor); err == nil {
+		s.notify(ctx, []string{target}, "FRIEND_REQUEST", map[string]any{
+			"user": userPayload(actorUser),
+		})
 	}
 	return nil
 }
@@ -160,6 +216,12 @@ func (s *Service) Accept(ctx context.Context, actor, from string) error {
 		}
 		return fmt.Errorf("%w: входящей заявки нет", ErrNotFound)
 	}
+
+	if actorUser, err := s.store.UserByID(ctx, actor); err == nil {
+		s.notify(ctx, []string{from}, "FRIEND_ACCEPT", map[string]any{
+			"user": userPayload(actorUser),
+		})
+	}
 	return nil
 }
 
@@ -170,7 +232,24 @@ func (s *Service) Remove(ctx context.Context, actor, other string) error {
 	if other == "" || actor == other {
 		return fmt.Errorf("%w: неверная пара пользователей", ErrValidation)
 	}
-	return s.store.DeleteRelationshipPair(ctx, actor, other)
+
+	rel, err := s.store.RelationType(ctx, actor, other)
+	if err != nil {
+		return err
+	}
+
+	if err := s.store.DeleteRelationshipPair(ctx, actor, other); err != nil {
+		return err
+	}
+
+	// Событие отправляем, только если связь была: иначе повторное удаление
+	// каждый раз дергало бы вторую сторону.
+	if rel != "" {
+		s.notify(ctx, []string{other}, "RELATIONSHIP_REMOVE", map[string]any{
+			"user_id": actor,
+		})
+	}
+	return nil
 }
 
 // SetBlocked ставит или снимает блокировку actor → target.
@@ -192,7 +271,15 @@ func (s *Service) SetBlocked(ctx context.Context, actor, target string, blocked 
 	}
 
 	if blocked {
-		return s.store.BlockUser(ctx, actor, target)
+		if err := s.store.BlockUser(ctx, actor, target); err != nil {
+			return err
+		}
+		// Заблокированный не должен узнать причину, но его список друзей
+		// обязан обновиться: иначе он продолжит видеть вас в «друзьях».
+		s.notify(ctx, []string{target}, "RELATIONSHIP_REMOVE", map[string]any{
+			"user_id": actor,
+		})
+		return nil
 	}
 	return s.store.UnblockUser(ctx, actor, target)
 }

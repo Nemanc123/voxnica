@@ -98,11 +98,13 @@ func run() error {
 	dmService := dm.NewService(store.NewWithPool(pool))
 	dmHandlers := api.NewDMHandlers(dmService)
 
-	socialService := social.NewService(store.NewWithPool(pool))
-	socialHandlers := api.NewSocialHandlers(socialService)
-
 	hub := gateway.NewHub()
 	hub.SetFilter(gateway.NewCachedFilter(guildService, 10*time.Second))
+
+	socialService := social.NewService(store.NewWithPool(pool))
+	socialHandlers := api.NewSocialHandlers(socialService, hub)
+	// Присутствие друзьям: хаб спрашивает список друзей у социального слоя.
+	hub.SetFriends(socialService)
 
 	nodeID := newNodeID()
 
@@ -113,6 +115,12 @@ func run() error {
 		defer func() { _ = rdb.Close() }()
 		publisher = fanout.NewPublisher(hub, rdb, nodeID)
 		go fanout.NewSubscriber(hub, rdb, nodeID).Run(ctx)
+	}
+
+	// События дружбы идут тем же путём, что и личные сообщения:
+	// через хаб, а при наличии Redis — через fan-out на другие узлы.
+	if up, ok := publisher.(social.UserPublisher); ok {
+		socialService.SetPublisher(up)
 	}
 
 	chatService := chat.NewService(store.NewWithPool(pool), guildService, publisher).WithDM(dmService)

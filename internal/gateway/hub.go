@@ -7,6 +7,7 @@ package gateway
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 
 	"github.com/Nemanc123/voxnica/internal/chat"
@@ -28,6 +29,14 @@ type PermissionFilter interface {
 	CanView(ctx context.Context, guildID, userID, channelID string) bool
 }
 
+// FriendIDsProvider отдаёт список друзей пользователя.
+//
+// Интерфейс, а не сервис: хаб не должен зависеть от пакета social, иначе
+// получится цикл (social → store, gateway → social, social → gateway).
+type FriendIDsProvider interface {
+	FriendIDs(ctx context.Context, userID string) ([]string, error)
+}
+
 type Hub struct {
 	mu      sync.RWMutex
 	byGuild map[string]map[*Session]struct{}
@@ -35,6 +44,7 @@ type Hub struct {
 	clients map[*Session]*Client // отсутствие = офлайн
 	online  map[string]int       // userID → число активных соединений
 	filter  PermissionFilter
+	friends FriendIDsProvider
 }
 
 func NewHub() *Hub {
@@ -50,6 +60,44 @@ func NewHub() *Hub {
 // получают все подписчики гильдии.
 func (h *Hub) SetFilter(f PermissionFilter) {
 	h.filter = f
+}
+
+// SetFriends включает рассылку присутствия друзьям. Без провайдера
+// присутствие уходит только в гильдии, как раньше.
+func (h *Hub) SetFriends(p FriendIDsProvider) {
+	h.friends = p
+}
+
+// IsOnline сообщает, есть ли у пользователя хотя бы одно активное соединение.
+func (h *Hub) IsOnline(userID string) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.online[userID] > 0
+}
+
+// NotifyFriendsPresence сообщает друзьям о смене статуса.
+//
+// Отдельный метод, потому что вызывается из двух мест: при подключении
+// (handler) и при обрыве (client.readPump). Ошибки не возвращаем: статус —
+// не критичное событие, соединение из-за него рвать нельзя.
+func (h *Hub) NotifyFriendsPresence(ctx context.Context, userID, status string) {
+	if h.friends == nil {
+		return
+	}
+
+	ids, err := h.friends.FriendIDs(ctx, userID)
+	if err != nil {
+		slog.Warn("gateway: friend list for presence", "err", err, "user_id", userID)
+		return
+	}
+	if len(ids) == 0 {
+		return
+	}
+
+	h.PublishToUsers(ctx, ids, "PRESENCE_UPDATE", map[string]string{
+		"user_id": userID,
+		"status":  status,
+	})
 }
 
 // Attach связывает сессию с активным соединением.

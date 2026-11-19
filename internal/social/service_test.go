@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"os"
+	"sync"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -378,6 +379,74 @@ func TestSearchRequiresTwoCharacters(t *testing.T) {
 
 	if _, err := e.service.Search(ctx, e.alice, "a"); !errors.Is(err, social.ErrValidation) {
 		t.Fatalf("ожидали ErrValidation на один символ, получили %v", err)
+	}
+}
+
+// recordingPublisher запоминает адресные события — как в тестах voice.
+type recordingPublisher struct {
+	mu     sync.Mutex
+	events []recordedEvent
+}
+
+type recordedEvent struct {
+	users []string
+	kind  string
+	data  any
+}
+
+func (r *recordingPublisher) PublishToUsers(_ context.Context, userIDs []string, eventType string, data any) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.events = append(r.events, recordedEvent{users: append([]string(nil), userIDs...), kind: eventType, data: data})
+}
+
+func (r *recordingPublisher) kinds() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]string, 0, len(r.events))
+	for _, e := range r.events {
+		out = append(out, e.kind)
+	}
+	return out
+}
+
+func TestEventsGoToRightPeople(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+
+	pub := &recordingPublisher{}
+	e.service.SetPublisher(pub)
+
+	if err := e.service.SendRequest(ctx, e.alice, e.bob); err != nil {
+		t.Fatalf("заявка: %v", err)
+	}
+	if err := e.service.Accept(ctx, e.bob, e.alice); err != nil {
+		t.Fatalf("принятие: %v", err)
+	}
+	if err := e.service.SetBlocked(ctx, e.alice, e.bob, true); err != nil {
+		t.Fatalf("блокировка: %v", err)
+	}
+
+	got := pub.kinds()
+	want := []string{"FRIEND_REQUEST", "FRIEND_ACCEPT", "RELATIONSHIP_REMOVE"}
+	if len(got) != len(want) {
+		t.Fatalf("событий %d (%v), ожидали %d (%v)", len(got), got, len(want), want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("событие %d: %q, ожидали %q", i, got[i], want[i])
+		}
+	}
+
+	// Заявка уходит адресату, принятие — отправителю, удаление — второму.
+	if pub.events[0].users[0] != e.bob {
+		t.Fatalf("FRIEND_REQUEST ушёл %v, ожидали bob", pub.events[0].users)
+	}
+	if pub.events[1].users[0] != e.alice {
+		t.Fatalf("FRIEND_ACCEPT ушёл %v, ожидали alice", pub.events[1].users)
+	}
+	if pub.events[2].users[0] != e.bob {
+		t.Fatalf("RELATIONSHIP_REMOVE ушёл %v, ожидали bob", pub.events[2].users)
 	}
 }
 

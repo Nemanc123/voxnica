@@ -1,6 +1,43 @@
 package gateway
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
+
+type friendStub struct {
+	ids []string
+}
+
+func (f friendStub) FriendIDs(context.Context, string) ([]string, error) { return f.ids, nil }
+
+// TestHubIsOnlineAndFriendPresence проверяет два новых метода хаба:
+// IsOnline (нужен эндпоинту присутствия) и рассылку присутствия друзьям.
+func TestHubIsOnlineAndFriendPresence(t *testing.T) {
+	hub := NewHub()
+	hub.SetFriends(friendStub{ids: []string{"friend-1", "friend-2"}})
+
+	if hub.IsOnline("user-1") {
+		t.Fatal("до подключения пользователь не в сети")
+	}
+
+	session := &Session{ID: "s1", UserID: "user-1", Guilds: nil}
+	client := newClient(hub, nil, session)
+	hub.Attach(session, client)
+
+	if !hub.IsOnline("user-1") {
+		t.Fatal("после Attach пользователь должен быть в сети")
+	}
+
+	// Друзья подписаны на личные события через byUser; для проверки
+	// достаточно того, что вызов не паникует и проходит через PublishToUsers.
+	hub.NotifyFriendsPresence(context.Background(), "user-1", "online")
+
+	hub.Detach(session)
+	if hub.IsOnline("user-1") {
+		t.Fatal("после единственного Detach пользователь не в сети")
+	}
+}
 
 func TestHubPresenceTracksFirstAndLastConnection(t *testing.T) {
 	hub := NewHub()

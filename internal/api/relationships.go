@@ -28,6 +28,9 @@ func validUserID(id string) bool { return uuidPattern.MatchString(id) }
 type SocialHandlers struct {
 	svc *social.Service
 
+	// online нужен только для присутствия друзей; в тестах может быть nil.
+	online OnlineChecker
+
 	// Лимиты держим в памяти процесса: при нескольких экземплярах сервера
 	// они умножаются на их число. Так же устроен лимит входа (auth.go),
 	// и по той же причине — переезд в Redis отложен.
@@ -35,9 +38,15 @@ type SocialHandlers struct {
 	requestLimiter *rateLimiter
 }
 
-func NewSocialHandlers(svc *social.Service) *SocialHandlers {
+// OnlineChecker отвечает, есть ли у пользователя активное соединение.
+type OnlineChecker interface {
+	IsOnline(userID string) bool
+}
+
+func NewSocialHandlers(svc *social.Service, online OnlineChecker) *SocialHandlers {
 	return &SocialHandlers{
 		svc:            svc,
+		online:         online,
 		searchLimiter:  newRateLimiter(20, time.Minute),
 		requestLimiter: newRateLimiter(10, time.Hour),
 	}
@@ -191,6 +200,31 @@ func (h *SocialHandlers) Block(w http.ResponseWriter, r *http.Request) {
 type searchUserItem struct {
 	userCard
 	Relation string `json:"relation"`
+}
+
+// Presence отдаёт статусы друзей: online/offline.
+//
+// Отдельный эндпоинт, а не поле в /relationships: статус меняется часто,
+// а список друзей — редко. Живые обновления приходят событием
+// PRESENCE_UPDATE по шлюзу.
+func (h *SocialHandlers) Presence(w http.ResponseWriter, r *http.Request) {
+	userID, _ := UserIDFrom(r.Context())
+
+	friends, err := h.svc.FriendIDs(r.Context(), userID)
+	if err != nil {
+		mapSocialError(w, err)
+		return
+	}
+
+	presence := make(map[string]string, len(friends))
+	for _, id := range friends {
+		presence[id] = "offline"
+		if h.online != nil && h.online.IsOnline(id) {
+			presence[id] = "online"
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"presence": presence})
 }
 
 // Search ищет людей по логину или имени.

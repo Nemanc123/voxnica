@@ -132,7 +132,7 @@ func newTestServer(t *testing.T, files *storage.Storage) (*httptest.Server, *cha
 		Messages: api.NewMessageHandlers(chatSvc),
 		Presence: api.NewPresenceHandlers(hub, gs),
 		Voice:    api.NewVoiceHandlers(voiceSvc),
-		Social:   api.NewSocialHandlers(social.NewService(st)),
+		Social:   api.NewSocialHandlers(social.NewService(st), hub),
 	})
 
 	srv := httptest.NewServer(router)
@@ -740,6 +740,14 @@ func TestRelationshipsFlow(t *testing.T) {
 	}
 	if got := users[0].(map[string]any)["relation"]; got != "friend" {
 		t.Fatalf("отношение %v, ожидали friend", got)
+	}
+
+	// 5.1. Присутствие: друзья в ответе, оба сейчас не в сети
+	// (WebSocket в этом тесте не открывается).
+	presence := alice.mustDo("GET", "/api/v1/relationships/presence", nil, http.StatusOK)
+	statuses := presence["presence"].(map[string]any)
+	if statuses[bobID] != "offline" {
+		t.Fatalf("статус друга %v, ожидали offline", statuses[bobID])
 	}
 
 	// 6. Кривой ввод.

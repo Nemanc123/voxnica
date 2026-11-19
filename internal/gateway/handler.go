@@ -236,6 +236,10 @@ func (h *Handler) announcePresence(session *Session, status string) {
 			"status":  status,
 		})
 	}
+
+	// Друзья получают статус независимо от общих серверов: иначе экран
+	// «Друзья» показывал бы «не в сети» у тех, с кем нет гильдии.
+	h.hub.NotifyFriendsPresence(ctx, session.UserID, status)
 }
 
 func closeWithCode(conn *websocket.Conn, code int, reason string) {

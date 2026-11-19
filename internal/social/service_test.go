@@ -243,7 +243,8 @@ func TestBlockPreventsRequestAndDM(t *testing.T) {
 	}
 }
 
-func TestUnblockDoesNotRestoreFriendship(t *testing.T) {
+// Решение пользователя 20.11.2026: снятие блокировки возвращает дружбу.
+func TestUnblockRestoresFriendship(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
 
@@ -265,8 +266,50 @@ func TestUnblockDoesNotRestoreFriendship(t *testing.T) {
 	if err != nil {
 		t.Fatalf("canDM: %v", err)
 	}
+	if !ok {
+		t.Fatal("после снятия блокировки дружба должна вернуться")
+	}
+
+	view, err := e.service.List(ctx, e.alice)
+	if err != nil {
+		t.Fatalf("список alice: %v", err)
+	}
+	if len(view.Friends) != 1 || view.Friends[0].User.ID != e.bob {
+		t.Fatalf("ожидался bob в друзьях, получено %+v", view.Friends)
+	}
+	if len(view.Blocked) != 0 {
+		t.Fatalf("заблокированных быть не должно, получено %+v", view.Blocked)
+	}
+}
+
+// Дружба возвращается только тем, с кем она была: разблокировка незнакомца
+// не должна делать его другом.
+func TestUnblockStrangerStaysStranger(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+
+	if err := e.service.SetBlocked(ctx, e.alice, e.carol, true); err != nil {
+		t.Fatalf("блокировка: %v", err)
+	}
+	if err := e.service.SetBlocked(ctx, e.alice, e.carol, false); err != nil {
+		t.Fatalf("снятие блокировки: %v", err)
+	}
+
+	ok, err := e.service.CanDM(ctx, e.alice, e.carol)
+	if err != nil {
+		t.Fatalf("canDM: %v", err)
+	}
 	if ok {
-		t.Fatal("снятие блокировки не должно восстанавливать дружбу")
+		t.Fatal("разблокировка незнакомца не должна создавать дружбу")
+	}
+
+	view, err := e.service.List(ctx, e.alice)
+	if err != nil {
+		t.Fatalf("список alice: %v", err)
+	}
+	if len(view.Friends) != 0 || len(view.Blocked) != 0 {
+		t.Fatalf("ожидались пустые списки, получено друзья %+v, блокировки %+v",
+			view.Friends, view.Blocked)
 	}
 }
 

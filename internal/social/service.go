@@ -254,7 +254,10 @@ func (s *Service) Remove(ctx context.Context, actor, other string) error {
 
 // SetBlocked ставит или снимает блокировку actor → target.
 //
-// Снятие блокировки дружбу не восстанавливает: нужно заново отправить заявку.
+// Снятие блокировки возвращает дружбу, если она была до блокировки
+// (решение пользователя 20.11.2026). Заявки не восстанавливаются.
+// Незнакомец после разблокировки остаётся незнакомцем: мгновенная дружба
+// со спамером — не то, чего ждут от кнопки.
 func (s *Service) SetBlocked(ctx context.Context, actor, target string, blocked bool) error {
 	if target == "" {
 		return fmt.Errorf("%w: нужен пользователь", ErrValidation)
@@ -287,7 +290,20 @@ func (s *Service) SetBlocked(ctx context.Context, actor, target string, blocked 
 		}
 		return nil
 	}
-	return s.store.UnblockUser(ctx, actor, target)
+	restored, err := s.store.UnblockUser(ctx, actor, target)
+	if err != nil {
+		return err
+	}
+	if restored {
+		// Дружба вернулась автоматически (решение 20.11.2026) — вторая
+		// сторона должна увидеть это без перезапуска приложения.
+		if actorUser, uerr := s.store.UserByID(ctx, actor); uerr == nil {
+			s.notify(ctx, []string{target}, "FRIEND_ACCEPT", map[string]any{
+				"user": userPayload(actorUser),
+			})
+		}
+	}
+	return nil
 }
 
 // likeEscaper обезвреживает служебные символы LIKE.

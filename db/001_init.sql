@@ -332,10 +332,13 @@ CREATE INDEX invites_guild_id_idx ON invites (guild_id);
 
 -- Друзья и блокировки. Одна строка на направление; при чтении учитываем оба.
 CREATE TABLE relationships (
-    user_id    uuid        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    target_id  uuid        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    type       text        NOT NULL CHECK (type IN ('friend','pending_out','pending_in','blocked')),
-    created_at timestamptz NOT NULL DEFAULT now(),
+    user_id      uuid        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    target_id    uuid        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    type         text        NOT NULL CHECK (type IN ('friend','pending_out','pending_in','blocked')),
+    -- Чем связь была до блокировки. Нужен, чтобы вернуть дружбу после
+    -- разблокировки; заявки не восстанавливаются, поэтому только эти три.
+    blocked_prev text        CHECK (blocked_prev IS NULL OR blocked_prev IN ('friend','pending_out','pending_in')),
+    created_at   timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (user_id, target_id),
     CONSTRAINT relationships_no_self CHECK (user_id <> target_id)
 );

@@ -181,7 +181,10 @@ func (s *Store) DeleteRelationshipPair(ctx context.Context, a, b string) error {
 
 // BlockUser ставит блокировку from → to и убирает обратную строку.
 //
-// Возвращает тип связи, который был до блокировки ("" если связи не было).
+// Возвращает тип связи, который был до блокировки ("" если связи не было),
+// и запоминает его в blocked_prev — чтобы снятие блокировки могло вернуть
+// дружбу (решение пользователя 20.11.2026).
+//
 // Проверка и запись идут одним запросом: иначе между чтением и вставкой
 // остаётся окно, в котором можно успеть отправить заявку, а событие об
 // удалении уже не отправится (ревью 19.11.2026).
@@ -192,13 +195,25 @@ func (s *Store) BlockUser(ctx context.Context, from, to string) (string, error) 
 			 WHERE user_id = $2::uuid AND target_id = $1::uuid
 			RETURNING 1
 		), previous AS (
-			SELECT type FROM relationships
+			SELECT type, blocked_prev FROM relationships
 			 WHERE user_id = $1::uuid AND target_id = $2::uuid
 		), blocked AS (
-			INSERT INTO relationships (user_id, target_id, type)
-			VALUES ($1::uuid, $2::uuid, 'blocked')
+			INSERT INTO relationships (user_id, target_id, type, blocked_prev)
+			SELECT $1::uuid, $2::uuid, 'blocked',
+			       (SELECT CASE
+			                   WHEN type IN ('friend','pending_out','pending_in') THEN type
+			                   -- повторная блокировка: помним, кем были до первой
+			                   WHEN type = 'blocked' THEN blocked_prev
+			               END
+			          FROM previous)
 			ON CONFLICT (user_id, target_id)
-			DO UPDATE SET type = 'blocked', created_at = now()
+			DO UPDATE SET type = 'blocked',
+			              blocked_prev = (SELECT CASE
+			                                     WHEN type IN ('friend','pending_out','pending_in') THEN type
+			                                     WHEN type = 'blocked' THEN blocked_prev
+			                                 END
+			                                FROM previous),
+			              created_at = now()
 			RETURNING 1
 		)
 		SELECT coalesce((SELECT type FROM previous), '')`
@@ -210,16 +225,41 @@ func (s *Store) BlockUser(ctx context.Context, from, to string) (string, error) 
 	return prev, nil
 }
 
-// UnblockUser снимает блокировку from → to. Дружба не восстанавливается.
-func (s *Store) UnblockUser(ctx context.Context, from, to string) error {
+// UnblockUser снимает блокировку from → to.
+//
+// Если до блокировки люди были друзьями, дружба возвращается — обе строки
+// пары снова 'friend' (решение пользователя 20.11.2026). Заявки не
+// восстанавливаются: только состоявшаяся дружба.
+//
+// Возвращает true, если дружба восстановлена. Удаление блокировки и вставка
+// дружбы — один запрос: иначе между ними остаётся окно.
+func (s *Store) UnblockUser(ctx context.Context, from, to string) (bool, error) {
 	const query = `
-		DELETE FROM relationships
-		 WHERE user_id = $1::uuid AND target_id = $2::uuid AND type = 'blocked'`
+		WITH removed AS (
+			DELETE FROM relationships
+			 WHERE user_id = $1::uuid AND target_id = $2::uuid AND type = 'blocked'
+			 RETURNING blocked_prev
+		), restored AS (
+			INSERT INTO relationships (user_id, target_id, type)
+			SELECT pair.uid, pair.tid, 'friend'
+			  FROM (VALUES ($1::uuid, $2::uuid), ($2::uuid, $1::uuid)) AS pair(uid, tid)
+			 WHERE (SELECT blocked_prev FROM removed) = 'friend'
+			   AND NOT EXISTS (
+					SELECT 1 FROM relationships r
+					 WHERE r.user_id = $2::uuid AND r.target_id = $1::uuid
+					   AND r.type = 'blocked'
+			   )
+			ON CONFLICT (user_id, target_id)
+			DO UPDATE SET type = 'friend', blocked_prev = NULL, created_at = now()
+			RETURNING 1
+		)
+		SELECT EXISTS (SELECT 1 FROM restored)`
 
-	if _, err := s.db.Exec(ctx, query, from, to); err != nil {
-		return fmt.Errorf("снятие блокировки: %w", err)
+	var restored bool
+	if err := s.db.QueryRow(ctx, query, from, to).Scan(&restored); err != nil {
+		return false, fmt.Errorf("снятие блокировки: %w", err)
 	}
-	return nil
+	return restored, nil
 }
 
 // BlockedEither сообщает, есть ли блокировка в любую сторону пары.

@@ -783,13 +783,24 @@ func TestRelationshipsFlow(t *testing.T) {
 		t.Fatalf("заблокировавший не должен находиться в поиске, найдено %d", got)
 	}
 
-	// 8. Снятие блокировки не восстанавливает дружбу.
+	// 8. Снятие блокировки возвращает дружбу (решение 20.11.2026):
+	// блокировали друга — значит, друг вернулся.
 	alice.mustDo("PUT", "/api/v1/relationships/"+bobID+"/block",
 		map[string]any{"blocked": false}, http.StatusNoContent)
 
 	list = alice.mustDo("GET", "/api/v1/relationships", nil, http.StatusOK)
-	if got := len(list["friends"].([]any)); got != 0 {
-		t.Fatalf("после блокировки друзей %d, ожидали 0", got)
+	if got := len(list["friends"].([]any)); got != 1 {
+		t.Fatalf("после разблокировки друзей %d, ожидали 1", got)
+	}
+	if got := len(list["blocked"].([]any)); got != 0 {
+		t.Fatalf("после разблокировки заблокированных %d, ожидали 0", got)
+	}
+
+	// 8.1. Поиск у обеих сторон снова показывает дружбу.
+	found = bob.mustDo("GET", "/api/v1/users/search?q="+aliceName, nil, http.StatusOK)
+	users = found["users"].([]any)
+	if len(users) != 1 || users[0].(map[string]any)["relation"] != "friend" {
+		t.Fatalf("bob должен видеть alice другом, получено %v", users)
 	}
 }
 

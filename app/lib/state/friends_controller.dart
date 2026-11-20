@@ -28,6 +28,12 @@ class FriendsController extends ChangeNotifier {
   /// что нажатие не сработало (нашлось при живом тесте 19.11.2026).
   String _query = '';
 
+  /// Поколение состояния. `reset()` увеличивает его, а каждый запрос
+  /// запоминает своё поколение и после `await` проверяет, что оно не
+  /// изменилось. Без этого ответ, ушедший до выхода из аккаунта, мог
+  /// вернуться после сброса и снова показать чужие данные (P-48).
+  int _generation = 0;
+
   FriendsView get view => _view;
   Map<String, String> get presence => _presence;
   List<UserSearchResult> get results => _results;
@@ -45,20 +51,26 @@ class FriendsController extends ChangeNotifier {
 
   /// Загружает список связей и присутствие.
   Future<void> load() async {
+    final gen = _generation;
     _loading = true;
     _error = null;
     notifyListeners();
 
     try {
       final view = await _api.relationships();
+      if (gen != _generation) return;
       final presence = await _api.friendsPresence();
+      if (gen != _generation) return;
       _view = view;
       _presence = presence;
     } catch (e) {
+      if (gen != _generation) return;
       _error = _describe(e);
     } finally {
-      _loading = false;
-      notifyListeners();
+      if (gen == _generation) {
+        _loading = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -68,6 +80,7 @@ class FriendsController extends ChangeNotifier {
   /// в «Добавить в друзья» видна чужая строка с кнопкой «Разблокировать»,
   /// и кажется, что предлагают разблокировать самого себя (P-48).
   void reset() {
+    _generation++;
     _view = const FriendsView.empty();
     _presence = const {};
     _results = const [];
@@ -95,19 +108,25 @@ class FriendsController extends ChangeNotifier {
       return;
     }
 
+    final gen = _generation;
     _query = q;
     _searching = true;
     _error = null;
     notifyListeners();
 
     try {
-      _results = await _api.searchUsers(q);
+      final results = await _api.searchUsers(q);
+      if (gen != _generation) return;
+      _results = results;
     } catch (e) {
+      if (gen != _generation) return;
       _error = _describe(e);
       _results = const [];
     } finally {
-      _searching = false;
-      notifyListeners();
+      if (gen == _generation) {
+        _searching = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -128,19 +147,24 @@ class FriendsController extends ChangeNotifier {
     Future<void> Function() call, {
     required bool reload,
   }) async {
+    final gen = _generation;
     _error = null;
     try {
       await call();
+      // Пока запрос летел, аккаунт сменился: ответ уже не наш.
+      if (gen != _generation) return true;
       if (reload) {
         final view = await _api.relationships();
+        if (gen != _generation) return true;
         _view = view;
       }
       notifyListeners();
       // Связь изменилась — отношения в выдаче поиска тоже. Без перезапроса
       // кнопка «Разблокировать» остаётся на месте, будто действие не прошло.
-      await _refreshSearch();
+      await _refreshSearch(gen);
       return true;
     } catch (e) {
+      if (gen != _generation) return false;
       _error = _describe(e);
       notifyListeners();
       return false;
@@ -151,10 +175,13 @@ class FriendsController extends ChangeNotifier {
   ///
   /// Ошибку здесь глотаем: связь уже изменена, а список поиска обновится
   /// при следующем вводе — показывать два сообщения об ошибке незачем.
-  Future<void> _refreshSearch() async {
+  /// Поколение защищает от записи ответа, ушедшего до смены аккаунта.
+  Future<void> _refreshSearch(int generation) async {
     if (_query.isEmpty || _results.isEmpty) return;
     try {
-      _results = await _api.searchUsers(_query);
+      final results = await _api.searchUsers(_query);
+      if (generation != _generation) return;
+      _results = results;
       notifyListeners();
     } catch (_) {
       // см. комментарий выше

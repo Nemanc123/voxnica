@@ -6,6 +6,7 @@
 // кнопка «Разблокировать». Тест закрепляет: после действия поиск
 // обновляется, и отношение в строке меняется на актуальное.
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -153,5 +154,85 @@ void main() {
     expect(friends.view.friends, isEmpty);
     expect(friends.presence, isEmpty);
     expect(friends.error, isNull);
+  });
+
+  test('поздний ответ load после reset не возвращает чужие данные', () async {
+    final gate = Completer<http.Response>();
+
+    final api = await buildClient(
+      handler: (request) async {
+        final path = request.url.path;
+
+        if (request.method == 'GET' && path == '/api/v1/relationships') {
+          return gate.future;
+        }
+
+        if (request.method == 'GET' &&
+            path == '/api/v1/relationships/presence') {
+          return json({
+            'presence': {'u2': 'online'},
+          });
+        }
+
+        throw StateError('неожиданный запрос: ${request.method} $path');
+      },
+    );
+
+    final friends = FriendsController(api);
+    final pending = friends.load();
+    await Future<void>.delayed(Duration.zero);
+
+    friends.reset();
+    gate.complete(
+      json({
+        'friends': [
+          {
+            'user': {'id': 'u2', 'username': 'bob'},
+            'since': null,
+          },
+        ],
+        'incoming': <Object>[],
+        'outgoing': <Object>[],
+        'blocked': <Object>[],
+      }),
+    );
+    await pending;
+
+    expect(friends.view.friends, isEmpty, reason: 'ответ ушёл до смены аккаунта');
+    expect(friends.presence, isEmpty);
+    expect(friends.loading, isFalse);
+  });
+
+  test('поздний ответ search после reset не возвращает строки', () async {
+    final gate = Completer<http.Response>();
+
+    final api = await buildClient(
+      handler: (request) async {
+        final path = request.url.path;
+
+        if (request.method == 'GET' && path == '/api/v1/users/search') {
+          return gate.future;
+        }
+
+        throw StateError('неожиданный запрос: ${request.method} $path');
+      },
+    );
+
+    final friends = FriendsController(api);
+    final pending = friends.search('bob');
+    await Future<void>.delayed(Duration.zero);
+
+    friends.reset();
+    gate.complete(
+      json({
+        'users': [
+          {'id': 'u2', 'username': 'bob', 'relation': 'blocked'},
+        ],
+      }),
+    );
+    await pending;
+
+    expect(friends.results, isEmpty, reason: 'ответ ушёл до смены аккаунта');
+    expect(friends.searching, isFalse);
   });
 }

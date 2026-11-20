@@ -85,4 +85,33 @@ void main() {
     expect(dm.title('me'), 'Боб');
     expect(dm.title('other'), 'me');
   });
+
+  test('DmChannel группы: имя, участники и сокращение списка', () {
+    final group = DmChannel.fromJson({
+      'id': 'g1',
+      'type': 'group_dm',
+      'recipients': [
+        {'user_id': 'me', 'username': 'me'},
+        {'user_id': 'u1', 'username': 'anna'},
+        {'user_id': 'u2', 'username': 'bob'},
+        {'user_id': 'u3', 'username': 'carl'},
+        {'user_id': 'u4', 'username': 'dave'},
+      ],
+    });
+
+    expect(group.isGroup, isTrue);
+    expect(group.title('me'), 'anna, bob, carl +1');
+
+    final named = DmChannel.fromJson({
+      'id': 'g2',
+      'type': 'group_dm',
+      'name': 'Проект',
+      'recipients': [
+        {'user_id': 'me', 'username': 'me'},
+        {'user_id': 'u1', 'username': 'anna'},
+        {'user_id': 'u2', 'username': 'bob'},
+      ],
+    });
+    expect(named.title('me'), 'Проект');
+  });
 }

@@ -227,6 +227,43 @@ class ApiClient {
     return DmChannel.fromJson(json!);
   }
 
+  Future<DmChannel> createDmGroup(
+    List<String> recipientIds, {
+    String? name,
+  }) async {
+    final json = await _request(
+      'POST',
+      '/dms/group',
+      body: {
+        'recipient_ids': recipientIds,
+        if (name != null && name.trim().isNotEmpty) 'name': name.trim(),
+      },
+    );
+    return DmChannel.fromJson(json!);
+  }
+
+  Future<DmChannel> renameDm(String channelId, String? name) async {
+    final json = await _request(
+      'PATCH',
+      '/dms/$channelId',
+      body: {'name': name},
+    );
+    return DmChannel.fromJson(json!);
+  }
+
+  Future<DmChannel> addDmRecipient(String channelId, String userId) async {
+    final json = await _request(
+      'POST',
+      '/dms/$channelId/recipients',
+      body: {'user_id': userId},
+    );
+    return DmChannel.fromJson(json!);
+  }
+
+  Future<void> removeDmRecipient(String channelId, String userId) async {
+    await _request('DELETE', '/dms/$channelId/recipients/$userId');
+  }
+
   Future<void> inviteToCall(String channelId) async {
     await _request('POST', '/channels/$channelId/voice/invite');
   }

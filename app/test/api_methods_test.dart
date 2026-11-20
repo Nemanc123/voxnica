@@ -68,4 +68,63 @@ void main() {
     expect(captured!.method, 'PUT');
     expect(captured!.body, '{"blocked":false}');
   });
+
+  test('групповые методы ходят нужными путями и телами', () async {
+    final requests = <http.Request>[];
+
+    final api = await buildClient(
+      handler: (request) async {
+        requests.add(request);
+        final path = request.url.path;
+
+        if (path == '/api/v1/dms/group') {
+          return http.Response(
+            '{"id":"g1","type":"group_dm","recipients":[]}',
+            201,
+            headers: {'content-type': 'application/json'},
+          );
+        }
+        if (path == '/api/v1/dms/g1' && request.method == 'PATCH') {
+          return http.Response(
+            '{"id":"g1","type":"group_dm","name":"Новое","recipients":[]}',
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        }
+        if (path == '/api/v1/dms/g1/recipients' &&
+            request.method == 'POST') {
+          return http.Response(
+            '{"id":"g1","type":"group_dm","recipients":[]}',
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        }
+        if (path == '/api/v1/dms/g1/recipients/u3' &&
+            request.method == 'DELETE') {
+          return http.Response('', 204);
+        }
+        throw StateError('неожиданный запрос: ${request.method} $path');
+      },
+    );
+
+    await api.createDmGroup(['u1', 'u2'], name: 'Проект');
+    await api.renameDm('g1', 'Новое');
+    await api.addDmRecipient('g1', 'u3');
+    await api.removeDmRecipient('g1', 'u3');
+
+    expect(requests[0].method, 'POST');
+    expect(requests[0].url.path, '/api/v1/dms/group');
+    expect(requests[0].body, '{"recipient_ids":["u1","u2"],"name":"Проект"}');
+
+    expect(requests[1].method, 'PATCH');
+    expect(requests[1].url.path, '/api/v1/dms/g1');
+    expect(requests[1].body, '{"name":"Новое"}');
+
+    expect(requests[2].method, 'POST');
+    expect(requests[2].url.path, '/api/v1/dms/g1/recipients');
+    expect(requests[2].body, '{"user_id":"u3"}');
+
+    expect(requests[3].method, 'DELETE');
+    expect(requests[3].url.path, '/api/v1/dms/g1/recipients/u3');
+  });
 }

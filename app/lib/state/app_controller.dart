@@ -275,7 +275,24 @@ class AppController extends ChangeNotifier {
   /// Загружает список личных каналов. Ошибка не критична: остальной UI живёт.
   Future<void> _loadDms() async {
     try {
-      _dms = await api.listDms();
+      final dms = await api.listDms();
+      _dms = dms;
+
+      // Открытая группа могла переименоваться или изменить состав.
+      final current = _dm;
+      if (current != null) {
+        for (final item in dms) {
+          if (item.id == current.id) {
+            _dm = item;
+            _channel = Channel(
+              id: item.id,
+              name: item.title(_user?.id ?? ''),
+              type: item.type,
+            );
+            break;
+          }
+        }
+      }
       notifyListeners();
     } catch (_) {
       // Личные каналы появятся при следующем заходе.
@@ -316,7 +333,6 @@ class AppController extends ChangeNotifier {
       name: dm.title(_user?.id ?? ''),
       type: dm.type,
     );
-
     // Имена собеседников нужны ленте: диалог может быть с человеком,
     // которого нет в текущем сервере.
     final members = {..._members};
@@ -335,6 +351,123 @@ class AppController extends ChangeNotifier {
     notifyListeners();
 
     await _loadMessages(reset: true);
+  }
+
+  /// Создаёт групповой диалог и сразу открывает его.
+  Future<bool> createGroup(List<String> recipientIds, String? name) async {
+    _busy = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      final created = await api.createDmGroup(recipientIds, name: name);
+      _dms = await api.listDms();
+      final dm = _dms.firstWhere(
+        (item) => item.id == created.id,
+        orElse: () => created,
+      );
+      await selectDm(dm);
+      return true;
+    } catch (e) {
+      _error = _describe(e);
+      return false;
+    } finally {
+      _busy = false;
+      notifyListeners();
+    }
+  }
+
+  /// Переименовывает текущую группу. null — вернуть имя по участникам.
+  Future<bool> renameDm(String? name) async {
+    final dm = _dm;
+    if (dm == null || !dm.isGroup) return false;
+
+    _error = null;
+    try {
+      final updated = await api.renameDm(dm.id, name);
+      _replaceDm(updated);
+      return true;
+    } catch (e) {
+      _error = _describe(e);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Добавляет участника в текущую группу.
+  Future<bool> addDmMember(String userId) async {
+    final dm = _dm;
+    if (dm == null || !dm.isGroup) return false;
+
+    _error = null;
+    try {
+      final updated = await api.addDmRecipient(dm.id, userId);
+      _replaceDm(updated);
+      return true;
+    } catch (e) {
+      _error = _describe(e);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Убирает участника из текущей группы; себя — «выйти».
+  Future<bool> removeDmMember(String userId) async {
+    final dm = _dm;
+    if (dm == null || !dm.isGroup) return false;
+
+    _error = null;
+    try {
+      await api.removeDmRecipient(dm.id, userId);
+      if (userId == _user?.id) {
+        openDmHome();
+        return true;
+      }
+
+      _dms = await api.listDms();
+      DmChannel? updated;
+      for (final item in _dms) {
+        if (item.id == dm.id) updated = item;
+      }
+      if (updated != null) {
+        _replaceDm(updated);
+      } else {
+        openDmHome();
+      }
+      return true;
+    } catch (e) {
+      _error = _describe(e);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Обновляет группу в списке и в открытом канале.
+  void _replaceDm(DmChannel updated) {
+    _dms = [
+      for (final item in _dms)
+        if (item.id == updated.id) updated else item,
+    ];
+
+    if (_dm?.id == updated.id) {
+      _dm = updated;
+      _channel = Channel(
+        id: updated.id,
+        name: updated.title(_user?.id ?? ''),
+        type: updated.type,
+      );
+
+      final members = {..._members};
+      for (final participant in updated.recipients) {
+        members[participant.userId] = GuildMember(
+          userId: participant.userId,
+          username: participant.username,
+          displayName: participant.displayName,
+        );
+      }
+      _members = members;
+    }
+    notifyListeners();
   }
 
   Future<void> _loadMessages({required bool reset}) async {
@@ -690,6 +823,20 @@ class AppController extends ChangeNotifier {
               }
             }
           }
+          break;
+        }
+      case 'DM_CHANNEL_CREATE':
+      case 'DM_CHANNEL_UPDATE':
+        unawaited(_loadDms());
+        break;
+      case 'DM_CHANNEL_REMOVE':
+        {
+          final data = event.data;
+          final id = data is Map<String, dynamic>
+              ? data['channel_id'] as String?
+              : null;
+          if (id != null && id == _dm?.id) openDmHome();
+          unawaited(_loadDms());
           break;
         }
       case 'FRIEND_REQUEST':

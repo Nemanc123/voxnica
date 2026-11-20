@@ -156,23 +156,38 @@ class DmChannel {
     required this.id,
     required this.type,
     required this.recipients,
+    this.name,
   });
 
   final String id;
   final String type;
+  final String? name;
   final List<DmParticipant> recipients;
 
-  /// Имя диалога — собеседник, а не я.
+  bool get isGroup => type == 'group_dm';
+
+  /// Имя диалога: у группы — заданное имя или список участников,
+  /// у пары — собеседник, а не я.
   String title(String selfId) {
-    for (final participant in recipients) {
-      if (participant.userId != selfId) return participant.name;
+    final custom = name?.trim();
+    if (custom != null && custom.isNotEmpty) return custom;
+
+    final others = [
+      for (final participant in recipients)
+        if (participant.userId != selfId) participant.name,
+    ];
+    if (!isGroup) {
+      return others.isEmpty ? 'Личный канал' : others.first;
     }
-    return 'Личный канал';
+    if (others.isEmpty) return 'Группа';
+    if (others.length <= 3) return others.join(', ');
+    return '${others.take(3).join(', ')} +${others.length - 3}';
   }
 
   factory DmChannel.fromJson(Map<String, dynamic> json) => DmChannel(
     id: json['id'] as String,
     type: json['type'] as String? ?? 'dm',
+    name: json['name'] as String?,
     recipients: (json['recipients'] as List<dynamic>? ?? [])
         .cast<Map<String, dynamic>>()
         .map(DmParticipant.fromJson)

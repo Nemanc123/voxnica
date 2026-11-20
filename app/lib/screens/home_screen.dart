@@ -442,6 +442,11 @@ class _DmHomeSidebar extends StatelessWidget {
             children: [
               const Expanded(child: _GroupLabel('ЛИЧНЫЕ СООБЩЕНИЯ')),
               IconButton(
+                tooltip: 'Новая группа',
+                onPressed: () => _createGroupChat(context, controller),
+                icon: const Icon(Icons.group_add, size: 18),
+              ),
+              IconButton(
                 tooltip: 'Новый диалог',
                 onPressed: () => _startChat(context),
                 icon: const Icon(Icons.add, size: 18),
@@ -1074,6 +1079,62 @@ class _TextChannelState extends State<_TextChannel> {
     super.dispose();
   }
 
+  Future<void> _groupAction(String action) async {
+    final controller = widget.controller;
+
+    switch (action) {
+      case 'members':
+        await showDialog<void>(
+          context: context,
+          builder: (_) => _GroupMembersDialog(controller: controller),
+        );
+        return;
+      case 'rename':
+        final name = await _prompt(context, 'Название группы', 'Имя');
+        if (name == null || !mounted) return;
+        final ok = await controller.renameDm(
+          name.trim().isEmpty ? null : name.trim(),
+        );
+        if (!ok && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(controller.error ?? 'Не удалось переименовать'),
+            ),
+          );
+        }
+        return;
+      case 'leave':
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Выйти из группы?'),
+            content: const Text('Переписка останется у остальных участников.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Отмена'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Выйти'),
+              ),
+            ],
+          ),
+        );
+        if (confirmed != true || !mounted) return;
+
+        final selfId = controller.user?.id;
+        if (selfId == null) return;
+        final ok = await controller.removeDmMember(selfId);
+        if (!ok && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(controller.error ?? 'Не удалось выйти')),
+          );
+        }
+        return;
+    }
+  }
+
   Future<void> _send() async {
     final text = _input.text;
     if (text.trim().isEmpty) return;
@@ -1147,10 +1208,35 @@ class _TextChannelState extends State<_TextChannel> {
                 ? 'живые сообщения'
                 : 'переподключение…',
             trailing: widget.channel.isDm
-                ? IconButton(
-                    tooltip: 'Позвонить',
-                    onPressed: () => controller.startDmCall(widget.channel),
-                    icon: const Icon(Icons.call, size: 20),
+                ? Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (controller.dm?.isGroup == true)
+                        PopupMenuButton<String>(
+                          tooltip: 'Группа',
+                          onSelected: _groupAction,
+                          itemBuilder: (context) => const [
+                            PopupMenuItem(
+                              value: 'members',
+                              child: Text('Участники'),
+                            ),
+                            PopupMenuItem(
+                              value: 'rename',
+                              child: Text('Переименовать'),
+                            ),
+                            PopupMenuItem(
+                              value: 'leave',
+                              child: Text('Выйти из группы'),
+                            ),
+                          ],
+                        ),
+                      if (controller.dm?.isGroup != true)
+                        IconButton(
+                          tooltip: 'Позвонить',
+                          onPressed: () => controller.startDmCall(widget.channel),
+                          icon: const Icon(Icons.call, size: 20),
+                        ),
+                    ],
                   )
                 : null,
           ),
@@ -1895,4 +1981,323 @@ Future<String?> _prompt(
 
   controller.dispose();
   return result;
+}
+
+/// Диалог создания группы: выбор друзей и необязательное имя.
+Future<void> _createGroupChat(
+  BuildContext context,
+  AppController controller,
+) async {
+  final result = await showDialog<({List<String> ids, String? name})>(
+    context: context,
+    builder: (_) => _NewGroupDialog(controller: controller),
+  );
+  if (result == null || !context.mounted) return;
+
+  final ok = await controller.createGroup(result.ids, result.name);
+  if (!context.mounted) return;
+  if (!ok) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(controller.error ?? 'Не удалось создать группу')),
+    );
+  }
+}
+
+class _NewGroupDialog extends StatefulWidget {
+  const _NewGroupDialog({required this.controller});
+
+  final AppController controller;
+
+  @override
+  State<_NewGroupDialog> createState() => _NewGroupDialogState();
+}
+
+class _NewGroupDialogState extends State<_NewGroupDialog> {
+  final _name = TextEditingController();
+  final Set<String> _selected = {};
+
+  @override
+  void dispose() {
+    _name.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final selfId = widget.controller.user?.id ?? '';
+
+    return AlertDialog(
+      title: const Text('Новая группа'),
+      content: SizedBox(
+        width: 360,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              controller: _name,
+              decoration: const InputDecoration(
+                labelText: 'Название (необязательно)',
+              ),
+            ),
+            const SizedBox(height: 12),
+            ListenableBuilder(
+              listenable: widget.controller.friends,
+              builder: (context, _) {
+                final friends = [
+                  for (final entry in widget.controller.friends.view.friends)
+                    if (entry.user.id != selfId) entry.user,
+                ];
+
+                if (friends.isEmpty) {
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'Сначала добавьте друзей: группа собирается из них.',
+                        style: TextStyle(color: kTextMuted),
+                      ),
+                      TextButton.icon(
+                        onPressed: widget.controller.friends.load,
+                        icon: const Icon(Icons.refresh, size: 18),
+                        label: const Text('Обновить'),
+                      ),
+                    ],
+                  );
+                }
+
+                return SizedBox(
+                  height: 280,
+                  child: ListView.builder(
+                    itemCount: friends.length,
+                    itemBuilder: (context, index) {
+                      final user = friends[index];
+                      return CheckboxListTile(
+                        dense: true,
+                        value: _selected.contains(user.id),
+                        title: Text(user.name),
+                        subtitle: Text(
+                          '@${user.username}',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: kTextMuted,
+                          ),
+                        ),
+                        onChanged: (checked) {
+                          setState(() {
+                            if (checked == true) {
+                              _selected.add(user.id);
+                            } else {
+                              _selected.remove(user.id);
+                            }
+                          });
+                        },
+                      );
+                    },
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Выбрано ${_selected.length} · нужно минимум 2',
+              style: const TextStyle(fontSize: 11, color: kTextMuted),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Отмена'),
+        ),
+        FilledButton(
+          onPressed: _selected.length < 2
+              ? null
+              : () {
+                  final name = _name.text.trim();
+                  Navigator.of(context).pop((
+                    ids: _selected.toList(),
+                    name: name.isEmpty ? null : name,
+                  ));
+                },
+          child: const Text('Создать'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Участники группы: список, добавление и удаление.
+class _GroupMembersDialog extends StatelessWidget {
+  const _GroupMembersDialog({required this.controller});
+
+  final AppController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) {
+        final dm = controller.dm;
+        if (dm == null) {
+          return const AlertDialog(
+            title: Text('Участники'),
+            content: Text('Группа больше не открыта.'),
+          );
+        }
+
+        return AlertDialog(
+          title: const Text('Участники группы'),
+          content: SizedBox(
+            width: 380,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SizedBox(
+                  height: 280,
+                  child: ListView(
+                    children: [
+                      for (final participant in dm.recipients)
+                        ListTile(
+                          dense: true,
+                          leading: CircleAvatar(
+                            radius: 14,
+                            backgroundColor: kAccent,
+                            child: Text(
+                              participant.name.isEmpty
+                                  ? '?'
+                                  : participant.name
+                                        .substring(0, 1)
+                                        .toUpperCase(),
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ),
+                          title: Text(participant.name),
+                          subtitle: Text(
+                            '@${participant.username}',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: kTextMuted,
+                            ),
+                          ),
+                          trailing:
+                              participant.userId == controller.user?.id
+                              ? const Text(
+                                  'вы',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: kTextMuted,
+                                  ),
+                                )
+                              : IconButton(
+                                  tooltip: 'Убрать из группы',
+                                  icon: const Icon(Icons.person_remove, size: 18),
+                                  onPressed: () => _remove(
+                                    context,
+                                    dm.id,
+                                    participant,
+                                  ),
+                                ),
+                        ),
+                    ],
+                  ),
+                ),
+                if (dm.recipients.length < 10)
+                  TextButton.icon(
+                    onPressed: () => _add(context, dm),
+                    icon: const Icon(Icons.person_add_alt, size: 18),
+                    label: const Text('Добавить участника'),
+                  )
+                else
+                  const Text(
+                    'В группе уже 10 участников.',
+                    style: TextStyle(fontSize: 11, color: kTextMuted),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Готово'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _remove(
+    BuildContext context,
+    String channelId,
+    DmParticipant participant,
+  ) async {
+    final ok = await controller.removeDmMember(participant.userId);
+    if (!context.mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(controller.error ?? 'Не удалось убрать')),
+      );
+    }
+  }
+
+  Future<void> _add(BuildContext context, DmChannel dm) async {
+    final selfId = controller.user?.id ?? '';
+    final inGroup = {for (final p in dm.recipients) p.userId};
+    final candidates = [
+      for (final entry in controller.friends.view.friends)
+        if (entry.user.id != selfId && !inGroup.contains(entry.user.id))
+          entry.user,
+    ];
+
+    if (candidates.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Все друзья уже в группе или их нет')),
+      );
+      return;
+    }
+
+    final user = await showDialog<User>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Добавить в группу'),
+        content: SizedBox(
+          width: 320,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: candidates.length,
+            itemBuilder: (context, index) {
+              final user = candidates[index];
+              return ListTile(
+                dense: true,
+                title: Text(user.name),
+                subtitle: Text(
+                  '@${user.username}',
+                  style: const TextStyle(fontSize: 11, color: kTextMuted),
+                ),
+                onTap: () => Navigator.of(context).pop(user),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Отмена'),
+          ),
+        ],
+      ),
+    );
+    if (user == null || !context.mounted) return;
+
+    final ok = await controller.addDmMember(user.id);
+    if (!context.mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(controller.error ?? 'Не удалось добавить')),
+      );
+    }
+  }
 }

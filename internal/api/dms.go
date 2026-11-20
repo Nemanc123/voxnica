@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -32,7 +33,9 @@ type addRecipientRequest struct {
 }
 
 type renameGroupRequest struct {
-	Name *string `json:"name"`
+	// RawMessage, а не *string: нужно отличать «поле не передали» от
+	// «передали null». Иначе PATCH {} молча сбрасывает имя группы.
+	Name json.RawMessage `json:"name"`
 }
 
 // Open создаёт личный канал с пользователем или возвращает существующий.
@@ -146,8 +149,22 @@ func (h *DMHandlers) Rename(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_json", "тело запроса должно быть JSON-объектом")
 		return
 	}
+	if len(req.Name) == 0 {
+		writeError(w, http.StatusBadRequest, "validation_error", "нужно поле name")
+		return
+	}
 
-	channel, err := h.svc.Rename(r.Context(), userID, channelID, req.Name)
+	var name *string
+	if string(req.Name) != "null" {
+		var value string
+		if err := json.Unmarshal(req.Name, &value); err != nil {
+			writeError(w, http.StatusBadRequest, "validation_error", "name должен быть строкой или null")
+			return
+		}
+		name = &value
+	}
+
+	channel, err := h.svc.Rename(r.Context(), userID, channelID, name)
 	if err != nil {
 		mapDMError(w, err)
 		return

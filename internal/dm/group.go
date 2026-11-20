@@ -125,7 +125,7 @@ func (s *Service) AddRecipient(
 		return Channel{}, err
 	}
 
-	added, count, found, err := s.store.AddChannelRecipient(
+	added, _, found, err := s.store.AddChannelRecipient(
 		ctx, channelID, userID, MaxGroupParticipants)
 	if err != nil {
 		return Channel{}, err
@@ -133,9 +133,17 @@ func (s *Service) AddRecipient(
 	if !found {
 		return Channel{}, fmt.Errorf("%w: группа не найдена", ErrNotFound)
 	}
-	if !added && count >= MaxGroupParticipants {
-		return Channel{}, fmt.Errorf(
-			"%w: в группе уже %d участников", ErrValidation, MaxGroupParticipants)
+	if !added {
+		// Гонка: пользователя могли добавить между проверкой выше и вставкой.
+		// Тогда это не ошибка лимита, а успешное добавление.
+		member, err := s.store.IsChannelRecipient(ctx, channelID, userID)
+		if err != nil {
+			return Channel{}, err
+		}
+		if !member {
+			return Channel{}, fmt.Errorf(
+				"%w: в группе уже %d участников", ErrValidation, MaxGroupParticipants)
+		}
 	}
 
 	updated, err := s.store.DMChannelByID(ctx, channelID)

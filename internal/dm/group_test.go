@@ -272,6 +272,11 @@ func TestGroupEvents(t *testing.T) {
 	if len(rec.users[0]) != 3 {
 		t.Fatalf("событие создания ушло %v, ожидали трёх участников", rec.users[0])
 	}
+	for _, id := range rec.users[0] {
+		if id == e.stranger {
+			t.Fatalf("событие создания ушло постороннему: %v", rec.users[0])
+		}
+	}
 
 	if _, err := e.service.AddRecipient(ctx, e.owner, ch.ID, fourth); err != nil {
 		t.Fatalf("добавление: %v", err)

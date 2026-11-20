@@ -992,6 +992,9 @@ func TestGroupDMFlow(t *testing.T) {
 	if renamed["name"] != "Новое" {
 		t.Fatalf("имя %v, ожидали «Новое»", renamed["name"])
 	}
+	// Пустой PATCH не должен сбрасывать имя: поле обязательно.
+	carol.c.mustDo("PATCH", "/api/v1/dms/"+groupID,
+		map[string]any{}, http.StatusBadRequest)
 
 	// 6. Сообщение в группе доступно участнику.
 	msg := bob.c.mustDo("POST", "/api/v1/channels/"+groupID+"/messages",

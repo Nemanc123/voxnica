@@ -1,8 +1,9 @@
-// Package dm — личные каналы: создать, показать, проверить доступ.
+// Package dm — личные каналы: диалоги 1:1 и группы (group_dm).
 //
-// Правила простые: канал один на пару пользователей, ключ детерминированный,
-// войти может только получатель. Роли и переопределения каналов здесь не
-// работают — в личном канале их просто нет.
+// Правила 1:1: канал один на пару, ключ детерминированный, войти может
+// только получатель. Группы создаются явно, до 10 участников; любой
+// участник может добавлять, удалять и переименовывать. Роли и
+// переопределения каналов здесь не работают — в личном канале их нет.
 package dm
 
 import (
@@ -20,14 +21,33 @@ import (
 var (
 	ErrValidation = errors.New("неверные данные")
 	ErrForbidden  = errors.New("нет доступа")
+	ErrNotFound   = errors.New("не найдено")
 )
+
+// Publisher — адресная доставка событий личных каналов. Реализуют хаб и
+// fan-out; интерфейс отдельный, чтобы тесты могли его не иметь.
+type Publisher interface {
+	PublishToUsers(ctx context.Context, userIDs []string, eventType string, data any)
+}
 
 type Service struct {
 	store *store.Store
+	pub   Publisher
 }
 
 func NewService(st *store.Store) *Service {
 	return &Service{store: st}
+}
+
+// SetPublisher включает события личных каналов (создание группы, участники,
+// переименование). Без него сервис работает молча.
+func (s *Service) SetPublisher(p Publisher) { s.pub = p }
+
+func (s *Service) notify(ctx context.Context, userIDs []string, eventType string, data any) {
+	if s.pub == nil || len(userIDs) == 0 {
+		return
+	}
+	s.pub.PublishToUsers(ctx, userIDs, eventType, data)
 }
 
 // Participant — собеседник в личном канале.
@@ -41,6 +61,7 @@ type Participant struct {
 type Channel struct {
 	ID         string        `json:"id"`
 	Type       string        `json:"type"`
+	Name       *string       `json:"name,omitempty"`
 	CreatedAt  time.Time     `json:"created_at"`
 	Recipients []Participant `json:"recipients"`
 }
@@ -120,23 +141,26 @@ func (s *Service) Access(ctx context.Context, userID, channelID string) (perms.P
 		return 0, false, nil
 	}
 
-	// Блокировка закрывает и уже существующий диалог: без этой проверки
+	// Блокировка закрывает уже существующий диалог 1:1: без этой проверки
 	// заблокированный продолжал бы писать и звонить в старую переписку
-	// (нашло ревью 19.11.2026).
-	recipients, err := s.store.ChannelRecipientIDs(ctx, channelID)
-	if err != nil {
-		return 0, false, err
-	}
-	for _, other := range recipients {
-		if other == userID {
-			continue
-		}
-		blocked, err := s.store.BlockedEither(ctx, userID, other)
+	// (нашло ревью 19.11.2026). На группы блокировка не распространяется:
+	// иначе один конфликт двух участников закрыл бы канал всем.
+	if channel.Type == "dm" {
+		recipients, err := s.store.ChannelRecipientIDs(ctx, channelID)
 		if err != nil {
 			return 0, false, err
 		}
-		if blocked {
-			return 0, false, nil
+		for _, other := range recipients {
+			if other == userID {
+				continue
+			}
+			blocked, err := s.store.BlockedEither(ctx, userID, other)
+			if err != nil {
+				return 0, false, err
+			}
+			if blocked {
+				return 0, false, nil
+			}
 		}
 	}
 
@@ -169,6 +193,7 @@ func toView(ch store.DMChannel) Channel {
 	return Channel{
 		ID:         ch.ID,
 		Type:       ch.Type,
+		Name:       ch.Name,
 		CreatedAt:  ch.CreatedAt,
 		Recipients: recipients,
 	}

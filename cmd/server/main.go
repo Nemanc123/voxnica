@@ -123,6 +123,11 @@ func run() error {
 		socialService.SetPublisher(up)
 	}
 
+	// События личных каналов: создание группы, участники, переименование.
+	if up, ok := publisher.(dm.Publisher); ok {
+		dmService.SetPublisher(up)
+	}
+
 	chatService := chat.NewService(store.NewWithPool(pool), guildService, publisher).WithDM(dmService)
 
 	// Хранилище файлов необязательно: без него сервер работает, но вложения

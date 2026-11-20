@@ -900,3 +900,129 @@ func TestDMBlockedAfterOpen(t *testing.T) {
 		"user_id": bobID,
 	}, http.StatusForbidden)
 }
+
+// TestGroupDMFlow проверяет групповые диалоги через HTTP: создание, список,
+// добавление и удаление участников, переименование, права и сообщения.
+func TestGroupDMFlow(t *testing.T) {
+	srv, _ := newTestServer(t, nil)
+	suffix := time.Now().UnixNano()
+
+	type account struct {
+		c    *client
+		id   string
+		name string
+	}
+
+	makeAccount := func(prefix string) account {
+		name := randomName(suffix, prefix)
+		c := &client{t: t, base: srv.URL}
+		c.mustDo("POST", "/api/v1/auth/register", map[string]any{
+			"username": name,
+			"password": "very-long-password",
+		}, http.StatusCreated)
+		login := c.mustDo("POST", "/api/v1/auth/login", map[string]any{
+			"login":    name,
+			"password": "very-long-password",
+		}, http.StatusOK)
+		c.token = login["access_token"].(string)
+		return account{
+			c:    c,
+			id:   login["user"].(map[string]any)["id"].(string),
+			name: name,
+		}
+	}
+
+	alice := makeAccount("ga")
+	bob := makeAccount("gb")
+	carol := makeAccount("gc")
+	dave := makeAccount("gd")
+
+	// 1. Группа из трёх человек.
+	created := alice.c.mustDo("POST", "/api/v1/dms/group", map[string]any{
+		"recipient_ids": []string{bob.id, carol.id},
+		"name":          "Проект",
+	}, http.StatusCreated)
+	groupID := created["id"].(string)
+	if created["type"] != "group_dm" {
+		t.Fatalf("тип %v, ожидали group_dm", created["type"])
+	}
+	if got := len(created["recipients"].([]any)); got != 3 {
+		t.Fatalf("участников %d, ожидали 3", got)
+	}
+	if created["name"] != "Проект" {
+		t.Fatalf("имя %v, ожидали «Проект»", created["name"])
+	}
+
+	// 2. Группа видна всем участникам и не видна постороннему.
+	for _, acc := range []account{alice, bob, carol} {
+		list := acc.c.mustDo("GET", "/api/v1/dms", nil, http.StatusOK)
+		found := false
+		for _, raw := range list["channels"].([]any) {
+			if raw.(map[string]any)["id"] == groupID {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("%s не видит группу в списке", acc.name)
+		}
+	}
+	daveList := dave.c.mustDo("GET", "/api/v1/dms", nil, http.StatusOK)
+	for _, raw := range daveList["channels"].([]any) {
+		if raw.(map[string]any)["id"] == groupID {
+			t.Fatal("посторонний не должен видеть группу")
+		}
+	}
+
+	// 3. Посторонний не может ни добавлять, ни переименовывать.
+	dave.c.mustDo("POST", "/api/v1/dms/"+groupID+"/recipients",
+		map[string]any{"user_id": dave.id}, http.StatusForbidden)
+	dave.c.mustDo("PATCH", "/api/v1/dms/"+groupID,
+		map[string]any{"name": "Чужое"}, http.StatusForbidden)
+
+	// 4. Участник добавляет четвёртого.
+	added := bob.c.mustDo("POST", "/api/v1/dms/"+groupID+"/recipients",
+		map[string]any{"user_id": dave.id}, http.StatusOK)
+	if got := len(added["recipients"].([]any)); got != 4 {
+		t.Fatalf("после добавления участников %d, ожидали 4", got)
+	}
+
+	// 5. Переименование.
+	renamed := carol.c.mustDo("PATCH", "/api/v1/dms/"+groupID,
+		map[string]any{"name": "  Новое  "}, http.StatusOK)
+	if renamed["name"] != "Новое" {
+		t.Fatalf("имя %v, ожидали «Новое»", renamed["name"])
+	}
+
+	// 6. Сообщение в группе доступно участнику.
+	msg := bob.c.mustDo("POST", "/api/v1/channels/"+groupID+"/messages",
+		map[string]any{"content": "привет группе"}, http.StatusCreated)
+	if msg["content"] != "привет группе" {
+		t.Fatalf("сообщение %v", msg["content"])
+	}
+	dave.c.mustDo("GET", "/api/v1/channels/"+groupID+"/messages",
+		nil, http.StatusOK)
+
+	// 7. Удаление участника: он теряет доступ и больше не видит группу.
+	bob.c.mustDo("DELETE", "/api/v1/dms/"+groupID+"/recipients/"+dave.id,
+		nil, http.StatusNoContent)
+	dave.c.mustDo("GET", "/api/v1/channels/"+groupID+"/messages",
+		nil, http.StatusForbidden)
+	daveList = dave.c.mustDo("GET", "/api/v1/dms", nil, http.StatusOK)
+	for _, raw := range daveList["channels"].([]any) {
+		if raw.(map[string]any)["id"] == groupID {
+			t.Fatal("удалённый не должен видеть группу")
+		}
+	}
+
+	// 8. Ошибки: группа из двух, неверный UUID, несуществующая группа.
+	alice.c.mustDo("POST", "/api/v1/dms/group", map[string]any{
+		"recipient_ids": []string{bob.id},
+	}, http.StatusBadRequest)
+	alice.c.mustDo("POST", "/api/v1/dms/group", map[string]any{
+		"recipient_ids": []string{bob.id, "abc"},
+	}, http.StatusBadRequest)
+	alice.c.mustDo("PATCH", "/api/v1/dms/abc",
+		map[string]any{"name": "x"}, http.StatusBadRequest)
+	alice.c.mustDo("POST", "/api/v1/dms/00000000-0000-0000-0000-000000000000/recipients",
+		map[string]any{"user_id": bob.id}, http.StatusNotFound)
+}

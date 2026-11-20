@@ -86,6 +86,10 @@ func NewRouter(d Deps) http.Handler {
 			if d.DM != nil {
 				r.Post("/dms", d.DM.Open)
 				r.Get("/dms", d.DM.List)
+				r.Post("/dms/group", d.DM.CreateGroup)
+				r.Patch("/dms/{channelID}", d.DM.Rename)
+				r.Post("/dms/{channelID}/recipients", d.DM.AddRecipient)
+				r.Delete("/dms/{channelID}/recipients/{userID}", d.DM.RemoveRecipient)
 			}
 
 			// Друзья, заявки и блокировки.

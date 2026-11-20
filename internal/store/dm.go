@@ -14,6 +14,7 @@ import (
 type DMChannel struct {
 	ID         string
 	Type       string
+	Name       *string
 	CreatedAt  time.Time
 	Recipients []User
 }
@@ -93,7 +94,7 @@ func (s *Store) ChannelRecipients(ctx context.Context, channelID string) ([]User
 // UserDMChannels — личные каналы пользователя с получателями.
 func (s *Store) UserDMChannels(ctx context.Context, userID string) ([]DMChannel, error) {
 	const query = `
-		SELECT c.id::text, c.type, c.created_at,
+		SELECT c.id::text, c.type, c.name, c.created_at,
 		       u.id::text, u.username::text, u.display_name
 		  FROM channels c
 		  JOIN channel_recipients me ON me.channel_id = c.id AND me.user_id = $1::uuid
@@ -113,9 +114,10 @@ func (s *Store) UserDMChannels(ctx context.Context, userID string) ([]DMChannel,
 	var order []string
 	for rows.Next() {
 		var channelID, channelType string
+		var channelName *string
 		var createdAt time.Time
 		var u User
-		if err := rows.Scan(&channelID, &channelType, &createdAt,
+		if err := rows.Scan(&channelID, &channelType, &channelName, &createdAt,
 			&u.ID, &u.Username, &u.DisplayName); err != nil {
 			return nil, fmt.Errorf("чтение личного канала: %w", err)
 		}
@@ -125,6 +127,7 @@ func (s *Store) UserDMChannels(ctx context.Context, userID string) ([]DMChannel,
 			ch = &DMChannel{
 				ID:        channelID,
 				Type:      channelType,
+				Name:      channelName,
 				CreatedAt: createdAt,
 			}
 			byID[channelID] = ch

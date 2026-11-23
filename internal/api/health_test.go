@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -37,12 +39,20 @@ func TestReadinessSchemaCheck(t *testing.T) {
 	schema := fmt.Sprintf("readiness_test_%d", time.Now().UnixNano())
 	schemaIdent := pgx.Identifier{schema}.Sanitize()
 	if _, err := pool.Exec(ctx, "CREATE SCHEMA "+schemaIdent); err != nil {
+		// На роли без права CREATE на базу тест не должен быть красным:
+		// проверка схемы к правам отношения не имеет.
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "42501" {
+			t.Skip("нет права CREATE на базу — проверка схемы пропущена")
+		}
 		t.Fatalf("создание схемы: %v", err)
 	}
 	t.Cleanup(func() {
 		dropCtx, dropCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer dropCancel()
-		_, _ = pool.Exec(dropCtx, "DROP SCHEMA "+schemaIdent+" CASCADE")
+		if _, err := pool.Exec(dropCtx, "DROP SCHEMA "+schemaIdent+" CASCADE"); err != nil {
+			t.Logf("удаление временной схемы %s: %v", schema, err)
+		}
 	})
 
 	for _, table := range []string{"users", "relationships", "read_states"} {

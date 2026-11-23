@@ -92,6 +92,17 @@ func (s *Store) AddChannelRecipient(
 			 WHERE (SELECT n FROM current) < $3
 			ON CONFLICT DO NOTHING
 			RETURNING 1
+		), mark AS (
+			-- Новый участник не должен видеть всю историю группы как
+			-- непрочитанную: отмечаем всё существующее прочитанным.
+			INSERT INTO read_states (user_id, channel_id, last_read_seq)
+			SELECT $2::uuid, $1::uuid,
+			       coalesce((SELECT max(seq) FROM messages
+			                  WHERE channel_id = $1::uuid
+			                    AND deleted_at IS NULL), 0)
+			 WHERE EXISTS (SELECT 1 FROM ins)
+			ON CONFLICT (user_id, channel_id) DO NOTHING
+			RETURNING 1
 		)
 		SELECT EXISTS(SELECT 1 FROM ins),
 		       coalesce((SELECT n FROM current), 0),
@@ -108,11 +119,18 @@ func (s *Store) AddChannelRecipient(
 func (s *Store) RemoveChannelRecipient(
 	ctx context.Context, channelID, userID string,
 ) (removed bool, remaining int, err error) {
-	tag, err := s.db.Exec(ctx, `
-		DELETE FROM channel_recipients
-		 WHERE channel_id = $1::uuid AND user_id = $2::uuid`,
-		channelID, userID)
-	if err != nil {
+	if err := s.db.QueryRow(ctx, `
+		WITH del AS (
+			DELETE FROM channel_recipients
+			 WHERE channel_id = $1::uuid AND user_id = $2::uuid
+			RETURNING 1
+		), rs AS (
+			DELETE FROM read_states
+			 WHERE user_id = $2::uuid AND channel_id = $1::uuid
+			   AND EXISTS (SELECT 1 FROM del)
+		)
+		SELECT EXISTS(SELECT 1 FROM del)`,
+		channelID, userID).Scan(&removed); err != nil {
 		return false, 0, fmt.Errorf("удаление участника группы: %w", err)
 	}
 
@@ -122,7 +140,7 @@ func (s *Store) RemoveChannelRecipient(
 		return false, 0, fmt.Errorf("подсчёт участников группы: %w", err)
 	}
 
-	return tag.RowsAffected() > 0, remaining, nil
+	return removed, remaining, nil
 }
 
 // RenameGroup переименовывает группу. nil — вернуть имя по умолчанию

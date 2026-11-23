@@ -127,6 +127,7 @@ void main() {
       ],
       'last_message': {
         'id': 'm1',
+        'seq': 42,
         'author_id': 'other',
         'content': 'привет',
         'created_at': '2026-11-23T10:00:00Z',
@@ -135,6 +136,7 @@ void main() {
     });
 
     expect(dm.lastMessage, isNotNull);
+    expect(dm.lastMessage!.seq, 42);
     expect(dm.lastMessage!.preview, 'привет');
     expect(dm.lastMessage!.authorId, 'other');
 
@@ -144,5 +146,30 @@ void main() {
       'has_attachments': true,
     });
     expect(attachmentOnly.preview, 'Вложение');
+  });
+
+  test('правка старого сообщения не становится превью', () {
+    final dm = DmChannel.fromJson({
+      'id': 'd1',
+      'type': 'dm',
+      'recipients': [
+        {'user_id': 'me', 'username': 'me'},
+        {'user_id': 'other', 'username': 'bob'},
+      ],
+      'last_message': {'id': 'm10', 'seq': 10, 'content': 'последнее'},
+    });
+
+    Message message(int seq) => Message(
+      id: 'm$seq',
+      seq: seq,
+      channelId: 'd1',
+      authorId: 'other',
+      content: 'x',
+      createdAt: DateTime(2026, 11, 23),
+    );
+
+    expect(dm.shouldUpdatePreview(message(5)), isFalse);
+    expect(dm.shouldUpdatePreview(message(10)), isTrue);
+    expect(dm.shouldUpdatePreview(message(11)), isTrue);
   });
 }

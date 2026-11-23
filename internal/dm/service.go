@@ -60,6 +60,7 @@ type Participant struct {
 // LastMessage — превью последнего сообщения для списка диалогов.
 type LastMessage struct {
 	ID             string    `json:"id"`
+	Seq            int64     `json:"seq"`
 	AuthorID       *string   `json:"author_id,omitempty"`
 	Content        string    `json:"content"`
 	CreatedAt      time.Time `json:"created_at"`
@@ -218,6 +219,7 @@ func toLastMessage(lm *store.LastMessage) *LastMessage {
 	}
 	return &LastMessage{
 		ID:             lm.ID,
+		Seq:            lm.Seq,
 		AuthorID:       lm.AuthorID,
 		Content:        lm.Content,
 		CreatedAt:      lm.CreatedAt,

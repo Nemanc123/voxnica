@@ -156,12 +156,14 @@ class DmLastMessage {
   const DmLastMessage({
     required this.id,
     required this.content,
+    this.seq = 0,
     this.authorId,
     this.createdAt,
     this.hasAttachments = false,
   });
 
   final String id;
+  final int seq;
   final String content;
   final String? authorId;
   final DateTime? createdAt;
@@ -178,6 +180,7 @@ class DmLastMessage {
     final rawCreated = json['created_at'] as String?;
     return DmLastMessage(
       id: json['id'] as String? ?? '',
+      seq: (json['seq'] as num?)?.toInt() ?? 0,
       content: json['content'] as String? ?? '',
       authorId: json['author_id'] as String?,
       createdAt: rawCreated == null ? null : DateTime.tryParse(rawCreated),
@@ -204,6 +207,14 @@ class DmChannel {
   final int unread;
 
   bool get isGroup => type == 'group_dm';
+
+  /// Можно ли ставить это сообщение в превью.
+  ///
+  /// Правка старого сообщения (меньший `seq`) превью не меняет.
+  bool shouldUpdatePreview(Message message) {
+    final current = lastMessage;
+    return current == null || message.seq >= current.seq;
+  }
 
   /// Имя диалога: у группы — заданное имя или список участников,
   /// у пары — собеседник, а не я.

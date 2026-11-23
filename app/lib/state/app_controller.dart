@@ -277,10 +277,17 @@ class AppController extends ChangeNotifier {
     try {
       final dms = await api.listDms();
       _dms = dms;
-      _dmUnread = {
+      final merged = <String, int>{
         for (final dm in dms)
           if (dm.unread > 0) dm.id: dm.unread,
       };
+      // Не затираем локальные инкременты, пришедшие, пока список грузился.
+      for (final entry in _dmUnread.entries) {
+        if (entry.value > (merged[entry.key] ?? 0)) {
+          merged[entry.key] = entry.value;
+        }
+      }
+      _dmUnread = merged;
 
       // Открытая группа могла переименоваться или изменить состав.
       final current = _dm;
@@ -803,11 +810,18 @@ class AppController extends ChangeNotifier {
     final next = <DmChannel>[];
     for (final dm in _dms) {
       if (dm.id == message.channelId) {
+        // Старое сообщение (например, правка в середине истории) не должно
+        // становиться превью: сравниваем по seq.
+        if (!dm.shouldUpdatePreview(message)) {
+          next.add(dm);
+          continue;
+        }
         changed = true;
         next.add(
           dm.withLastMessage(
             DmLastMessage(
               id: message.id,
+              seq: message.seq,
               content: message.content,
               authorId: message.authorId,
               createdAt: message.createdAt,

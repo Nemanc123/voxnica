@@ -936,6 +936,7 @@ func TestGroupDMFlow(t *testing.T) {
 	bob := makeAccount("gb")
 	carol := makeAccount("gc")
 	dave := makeAccount("gd")
+	erin := makeAccount("ge")
 
 	// 1. Группа из трёх человек.
 	created := alice.c.mustDo("POST", "/api/v1/dms/group", map[string]any{
@@ -1039,6 +1040,17 @@ func TestGroupDMFlow(t *testing.T) {
 		ch := raw.(map[string]any)
 		if ch["id"] == groupID && ch["unread"].(float64) != 0 {
 			t.Fatalf("после read непрочитанных %v", ch["unread"])
+		}
+	}
+
+	// 6.3. Новый участник не должен получить всю историю как непрочитанную.
+	alice.c.mustDo("POST", "/api/v1/dms/"+groupID+"/recipients",
+		map[string]any{"user_id": erin.id}, http.StatusOK)
+	erinList := erin.c.mustDo("GET", "/api/v1/dms", nil, http.StatusOK)
+	for _, raw := range erinList["channels"].([]any) {
+		ch := raw.(map[string]any)
+		if ch["id"] == groupID && ch["unread"].(float64) != 0 {
+			t.Fatalf("новый участник получил непрочитанных %v", ch["unread"])
 		}
 	}
 

@@ -15,6 +15,7 @@ import (
 // LastMessage — последнее сообщение канала для списка диалогов.
 type LastMessage struct {
 	ID             string
+	Seq            int64
 	AuthorID       *string
 	Content        string
 	CreatedAt      time.Time
@@ -114,7 +115,7 @@ func (s *Store) UserDMChannels(ctx context.Context, userID string) ([]DMChannel,
 		           AND m2.deleted_at IS NULL
 		           AND (m2.author_id IS NULL OR m2.author_id <> $1::uuid)) AS unread,
 		       u.id::text, u.username::text, u.display_name,
-		       lm.id::text, lm.author_id::text, lm.content, lm.created_at,
+		       lm.id::text, lm.seq, lm.author_id::text, lm.content, lm.created_at,
 		       coalesce(lm.has_attachments, false)
 		  FROM channels c
 		  JOIN channel_recipients me ON me.channel_id = c.id AND me.user_id = $1::uuid
@@ -123,7 +124,7 @@ func (s *Store) UserDMChannels(ctx context.Context, userID string) ([]DMChannel,
 		  LEFT JOIN read_states rs
 		         ON rs.channel_id = c.id AND rs.user_id = $1::uuid
 		  LEFT JOIN LATERAL (
-		       SELECT m.id, m.author_id, m.content, m.created_at,
+		       SELECT m.id, m.seq, m.author_id, m.content, m.created_at,
 		              EXISTS (
 		                  SELECT 1 FROM attachments a WHERE a.message_id = m.id
 		              ) AS has_attachments
@@ -151,12 +152,13 @@ func (s *Store) UserDMChannels(ctx context.Context, userID string) ([]DMChannel,
 		var unread int64
 		var u User
 		var lmID, lmAuthor, lmContent pgtype.Text
+		var lmSeq pgtype.Int8
 		var lmCreated pgtype.Timestamptz
 		var lmHas bool
 		if err := rows.Scan(&channelID, &channelType, &channelName, &createdAt,
 			&unread,
 			&u.ID, &u.Username, &u.DisplayName,
-			&lmID, &lmAuthor, &lmContent, &lmCreated, &lmHas); err != nil {
+			&lmID, &lmSeq, &lmAuthor, &lmContent, &lmCreated, &lmHas); err != nil {
 			return nil, fmt.Errorf("чтение личного канала: %w", err)
 		}
 
@@ -172,6 +174,7 @@ func (s *Store) UserDMChannels(ctx context.Context, userID string) ([]DMChannel,
 			if lmID.Valid {
 				lm := &LastMessage{
 					ID:             lmID.String,
+					Seq:            lmSeq.Int64,
 					Content:        lmContent.String,
 					CreatedAt:      lmCreated.Time,
 					HasAttachments: lmHas,

@@ -74,6 +74,7 @@ type Channel struct {
 	CreatedAt   time.Time     `json:"created_at"`
 	Recipients  []Participant `json:"recipients"`
 	LastMessage *LastMessage  `json:"last_message,omitempty"`
+	Unread      int64         `json:"unread"`
 }
 
 // Open возвращает личный канал с пользователем recipientID, создавая его
@@ -207,6 +208,7 @@ func toView(ch store.DMChannel) Channel {
 		CreatedAt:   ch.CreatedAt,
 		Recipients:  recipients,
 		LastMessage: toLastMessage(ch.LastMessage),
+		Unread:      ch.Unread,
 	}
 }
 

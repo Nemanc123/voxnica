@@ -277,6 +277,10 @@ class AppController extends ChangeNotifier {
     try {
       final dms = await api.listDms();
       _dms = dms;
+      _dmUnread = {
+        for (final dm in dms)
+          if (dm.unread > 0) dm.id: dm.unread,
+      };
 
       // Открытая группа могла переименоваться или изменить состав.
       final current = _dm;

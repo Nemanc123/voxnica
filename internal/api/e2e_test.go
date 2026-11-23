@@ -1018,6 +1018,30 @@ func TestGroupDMFlow(t *testing.T) {
 		t.Fatalf("превью последнего сообщения: %v", preview)
 	}
 
+	// 6.2. Непрочитанные: сообщение боба для alice — 1, после read — 0.
+	aliceList := alice.c.mustDo("GET", "/api/v1/dms", nil, http.StatusOK)
+	var unread float64
+	for _, raw := range aliceList["channels"].([]any) {
+		ch := raw.(map[string]any)
+		if ch["id"] == groupID {
+			unread = ch["unread"].(float64)
+		}
+	}
+	if unread != 1 {
+		t.Fatalf("непрочитанных у alice %v, ожидали 1", unread)
+	}
+
+	alice.c.mustDo("POST", "/api/v1/channels/"+groupID+"/read",
+		map[string]any{"seq": msg["seq"]}, http.StatusNoContent)
+
+	aliceList = alice.c.mustDo("GET", "/api/v1/dms", nil, http.StatusOK)
+	for _, raw := range aliceList["channels"].([]any) {
+		ch := raw.(map[string]any)
+		if ch["id"] == groupID && ch["unread"].(float64) != 0 {
+			t.Fatalf("после read непрочитанных %v", ch["unread"])
+		}
+	}
+
 	// 7. Удаление участника: он теряет доступ и больше не видит группу.
 	bob.c.mustDo("DELETE", "/api/v1/dms/"+groupID+"/recipients/"+dave.id,
 		nil, http.StatusNoContent)

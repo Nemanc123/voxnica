@@ -28,6 +28,7 @@ type DMChannel struct {
 	CreatedAt   time.Time
 	Recipients  []User
 	LastMessage *LastMessage
+	Unread      int64
 }
 
 // CreateDM возвращает существующий личный канал для ключа или создаёт новый.
@@ -106,6 +107,12 @@ func (s *Store) ChannelRecipients(ctx context.Context, channelID string) ([]User
 func (s *Store) UserDMChannels(ctx context.Context, userID string) ([]DMChannel, error) {
 	const query = `
 		SELECT c.id::text, c.type, c.name, c.created_at,
+		       (SELECT count(*)
+		          FROM messages m2
+		         WHERE m2.channel_id = c.id
+		           AND m2.seq > coalesce(rs.last_read_seq, 0)
+		           AND m2.deleted_at IS NULL
+		           AND (m2.author_id IS NULL OR m2.author_id <> $1::uuid)) AS unread,
 		       u.id::text, u.username::text, u.display_name,
 		       lm.id::text, lm.author_id::text, lm.content, lm.created_at,
 		       coalesce(lm.has_attachments, false)
@@ -113,6 +120,8 @@ func (s *Store) UserDMChannels(ctx context.Context, userID string) ([]DMChannel,
 		  JOIN channel_recipients me ON me.channel_id = c.id AND me.user_id = $1::uuid
 		  JOIN channel_recipients r  ON r.channel_id = c.id
 		  JOIN users u               ON u.id = r.user_id
+		  LEFT JOIN read_states rs
+		         ON rs.channel_id = c.id AND rs.user_id = $1::uuid
 		  LEFT JOIN LATERAL (
 		       SELECT m.id, m.author_id, m.content, m.created_at,
 		              EXISTS (
@@ -139,11 +148,13 @@ func (s *Store) UserDMChannels(ctx context.Context, userID string) ([]DMChannel,
 		var channelID, channelType string
 		var channelName *string
 		var createdAt time.Time
+		var unread int64
 		var u User
 		var lmID, lmAuthor, lmContent pgtype.Text
 		var lmCreated pgtype.Timestamptz
 		var lmHas bool
 		if err := rows.Scan(&channelID, &channelType, &channelName, &createdAt,
+			&unread,
 			&u.ID, &u.Username, &u.DisplayName,
 			&lmID, &lmAuthor, &lmContent, &lmCreated, &lmHas); err != nil {
 			return nil, fmt.Errorf("чтение личного канала: %w", err)
@@ -156,6 +167,7 @@ func (s *Store) UserDMChannels(ctx context.Context, userID string) ([]DMChannel,
 				Type:      channelType,
 				Name:      channelName,
 				CreatedAt: createdAt,
+				Unread:    unread,
 			}
 			if lmID.Valid {
 				lm := &LastMessage{

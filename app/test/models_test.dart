@@ -106,6 +106,7 @@ void main() {
       'id': 'g2',
       'type': 'group_dm',
       'name': 'Проект',
+      'unread': 2,
       'recipients': [
         {'user_id': 'me', 'username': 'me'},
         {'user_id': 'u1', 'username': 'anna'},
@@ -113,6 +114,7 @@ void main() {
       ],
     });
     expect(named.title('me'), 'Проект');
+    expect(named.unread, 2);
   });
 
   test('DmChannel парсит превью последнего сообщения', () {

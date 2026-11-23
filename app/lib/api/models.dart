@@ -193,6 +193,7 @@ class DmChannel {
     required this.recipients,
     this.name,
     this.lastMessage,
+    this.unread = 0,
   });
 
   final String id;
@@ -200,6 +201,7 @@ class DmChannel {
   final String? name;
   final List<DmParticipant> recipients;
   final DmLastMessage? lastMessage;
+  final int unread;
 
   bool get isGroup => type == 'group_dm';
 
@@ -228,6 +230,7 @@ class DmChannel {
     lastMessage: json['last_message'] is Map<String, dynamic>
         ? DmLastMessage.fromJson(json['last_message'] as Map<String, dynamic>)
         : null,
+    unread: (json['unread'] as num?)?.toInt() ?? 0,
     recipients: (json['recipients'] as List<dynamic>? ?? [])
         .cast<Map<String, dynamic>>()
         .map(DmParticipant.fromJson)
@@ -240,6 +243,7 @@ class DmChannel {
     name: name,
     recipients: recipients,
     lastMessage: message,
+    unread: unread,
   );
 }
 

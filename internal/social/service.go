@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -223,6 +224,8 @@ func (s *Service) Accept(ctx context.Context, actor, from string) error {
 		s.notify(ctx, []string{from, actor}, "FRIEND_ACCEPT", map[string]any{
 			"user": userPayload(actorUser),
 		})
+	} else {
+		slog.Warn("friend accept: load user", "err", err, "user_id", actor)
 	}
 	return nil
 }
@@ -304,6 +307,8 @@ func (s *Service) SetBlocked(ctx context.Context, actor, target string, blocked 
 			s.notify(ctx, []string{target, actor}, "FRIEND_ACCEPT", map[string]any{
 				"user": userPayload(actorUser),
 			})
+		} else {
+			slog.Warn("friend unblock: load user", "err", uerr, "user_id", actor)
 		}
 	}
 	return nil

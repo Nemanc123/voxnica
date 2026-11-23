@@ -527,7 +527,10 @@ class _DmHomeTile extends StatelessWidget {
           : dm.recipients.first,
     );
     final title = dm.title(selfId);
-    final subtitle = dm.recipients.length > 2
+    final preview = dm.lastMessage;
+    final subtitle = preview != null
+        ? preview.preview
+        : dm.isGroup
         ? '${dm.recipients.length} участника'
         : '@${other.username}';
 
@@ -901,14 +904,31 @@ class _DmTile extends StatelessWidget {
                 const Icon(Icons.person, size: 18, color: kTextMuted),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text(
-                    dm.title(selfId),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: selected ? kTextPrimary : kTextMuted,
-                      fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        dm.title(selfId),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: selected ? kTextPrimary : kTextMuted,
+                          fontWeight: selected
+                              ? FontWeight.w600
+                              : FontWeight.w400,
+                        ),
+                      ),
+                      if (dm.lastMessage != null)
+                        Text(
+                          dm.lastMessage!.preview,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: kTextMuted,
+                          ),
+                        ),
+                    ],
                   ),
                 ),
                 if (unread > 0)

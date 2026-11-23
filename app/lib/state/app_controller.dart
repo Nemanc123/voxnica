@@ -793,6 +793,42 @@ class AppController extends ChangeNotifier {
     unawaited(gateway.connect());
   }
 
+  /// Обновляет превью диалога по пришедшему сообщению.
+  void _updateDmPreview(Message message) {
+    var changed = false;
+    final next = <DmChannel>[];
+    for (final dm in _dms) {
+      if (dm.id == message.channelId) {
+        changed = true;
+        next.add(
+          dm.withLastMessage(
+            DmLastMessage(
+              id: message.id,
+              content: message.content,
+              authorId: message.authorId,
+              createdAt: message.createdAt,
+              hasAttachments: message.attachments.isNotEmpty,
+            ),
+          ),
+        );
+      } else {
+        next.add(dm);
+      }
+    }
+    if (!changed) return;
+
+    _dms = next;
+    if (_dm?.id == message.channelId) {
+      for (final dm in _dms) {
+        if (dm.id == message.channelId) {
+          _dm = dm;
+          break;
+        }
+      }
+    }
+    notifyListeners();
+  }
+
   void _onGatewayEvent(GatewayEvent event) {
     switch (event.type) {
       case 'MESSAGE_CREATE':
@@ -801,6 +837,7 @@ class AppController extends ChangeNotifier {
           final data = event.data;
           if (data is Map<String, dynamic>) {
             final message = Message.fromJson(data);
+            _updateDmPreview(message);
             if (message.channelId == _channel?.id) {
               _upsertMessage(message);
               _markRead();
@@ -885,9 +922,20 @@ class AppController extends ChangeNotifier {
           final data = event.data;
           if (data is Map<String, dynamic>) {
             final id = data['id'] as String?;
+            final channelId = data['channel_id'] as String?;
             if (id != null) {
               _messages = _messages.where((m) => m.id != id).toList();
               notifyListeners();
+
+              // Если удалили последнее сообщение, превью нужно перезапросить.
+              if (channelId != null) {
+                for (final dm in _dms) {
+                  if (dm.id == channelId && dm.lastMessage?.id == id) {
+                    unawaited(_loadDms());
+                    break;
+                  }
+                }
+              }
             }
           }
           break;

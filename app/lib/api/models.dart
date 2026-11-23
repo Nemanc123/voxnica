@@ -151,18 +151,55 @@ class DmParticipant {
 }
 
 /// Личный канал: id совпадает с id канала сообщений и голосовой комнаты.
+/// Последнее сообщение диалога для списка.
+class DmLastMessage {
+  const DmLastMessage({
+    required this.id,
+    required this.content,
+    this.authorId,
+    this.createdAt,
+    this.hasAttachments = false,
+  });
+
+  final String id;
+  final String content;
+  final String? authorId;
+  final DateTime? createdAt;
+  final bool hasAttachments;
+
+  /// Текст для строки превью.
+  String get preview {
+    final text = content.trim().replaceAll('\n', ' ');
+    if (text.isNotEmpty) return text;
+    return hasAttachments ? 'Вложение' : 'Сообщение';
+  }
+
+  factory DmLastMessage.fromJson(Map<String, dynamic> json) {
+    final rawCreated = json['created_at'] as String?;
+    return DmLastMessage(
+      id: json['id'] as String? ?? '',
+      content: json['content'] as String? ?? '',
+      authorId: json['author_id'] as String?,
+      createdAt: rawCreated == null ? null : DateTime.tryParse(rawCreated),
+      hasAttachments: json['has_attachments'] as bool? ?? false,
+    );
+  }
+}
+
 class DmChannel {
   const DmChannel({
     required this.id,
     required this.type,
     required this.recipients,
     this.name,
+    this.lastMessage,
   });
 
   final String id;
   final String type;
   final String? name;
   final List<DmParticipant> recipients;
+  final DmLastMessage? lastMessage;
 
   bool get isGroup => type == 'group_dm';
 
@@ -188,10 +225,21 @@ class DmChannel {
     id: json['id'] as String,
     type: json['type'] as String? ?? 'dm',
     name: json['name'] as String?,
+    lastMessage: json['last_message'] is Map<String, dynamic>
+        ? DmLastMessage.fromJson(json['last_message'] as Map<String, dynamic>)
+        : null,
     recipients: (json['recipients'] as List<dynamic>? ?? [])
         .cast<Map<String, dynamic>>()
         .map(DmParticipant.fromJson)
         .toList(),
+  );
+
+  DmChannel withLastMessage(DmLastMessage message) => DmChannel(
+    id: id,
+    type: type,
+    name: name,
+    recipients: recipients,
+    lastMessage: message,
   );
 }
 

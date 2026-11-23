@@ -7,16 +7,27 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // DMChannel — личный канал вместе с получателями.
 // Отдельный тип, потому что у DM нет guild_id и прав по ролям.
+// LastMessage — последнее сообщение канала для списка диалогов.
+type LastMessage struct {
+	ID             string
+	AuthorID       *string
+	Content        string
+	CreatedAt      time.Time
+	HasAttachments bool
+}
+
 type DMChannel struct {
-	ID         string
-	Type       string
-	Name       *string
-	CreatedAt  time.Time
-	Recipients []User
+	ID          string
+	Type        string
+	Name        *string
+	CreatedAt   time.Time
+	Recipients  []User
+	LastMessage *LastMessage
 }
 
 // CreateDM возвращает существующий личный канал для ключа или создаёт новый.
@@ -95,11 +106,23 @@ func (s *Store) ChannelRecipients(ctx context.Context, channelID string) ([]User
 func (s *Store) UserDMChannels(ctx context.Context, userID string) ([]DMChannel, error) {
 	const query = `
 		SELECT c.id::text, c.type, c.name, c.created_at,
-		       u.id::text, u.username::text, u.display_name
+		       u.id::text, u.username::text, u.display_name,
+		       lm.id::text, lm.author_id::text, lm.content, lm.created_at,
+		       coalesce(lm.has_attachments, false)
 		  FROM channels c
 		  JOIN channel_recipients me ON me.channel_id = c.id AND me.user_id = $1::uuid
 		  JOIN channel_recipients r  ON r.channel_id = c.id
 		  JOIN users u               ON u.id = r.user_id
+		  LEFT JOIN LATERAL (
+		       SELECT m.id, m.author_id, m.content, m.created_at,
+		              EXISTS (
+		                  SELECT 1 FROM attachments a WHERE a.message_id = m.id
+		              ) AS has_attachments
+		         FROM messages m
+		        WHERE m.channel_id = c.id AND m.deleted_at IS NULL
+		        ORDER BY m.seq DESC
+		        LIMIT 1
+		  ) lm ON true
 		 WHERE c.deleted_at IS NULL AND c.guild_id IS NULL
 		   AND c.type IN ('dm', 'group_dm')
 		 ORDER BY c.created_at DESC, u.username`
@@ -117,8 +140,12 @@ func (s *Store) UserDMChannels(ctx context.Context, userID string) ([]DMChannel,
 		var channelName *string
 		var createdAt time.Time
 		var u User
+		var lmID, lmAuthor, lmContent pgtype.Text
+		var lmCreated pgtype.Timestamptz
+		var lmHas bool
 		if err := rows.Scan(&channelID, &channelType, &channelName, &createdAt,
-			&u.ID, &u.Username, &u.DisplayName); err != nil {
+			&u.ID, &u.Username, &u.DisplayName,
+			&lmID, &lmAuthor, &lmContent, &lmCreated, &lmHas); err != nil {
 			return nil, fmt.Errorf("чтение личного канала: %w", err)
 		}
 
@@ -129,6 +156,19 @@ func (s *Store) UserDMChannels(ctx context.Context, userID string) ([]DMChannel,
 				Type:      channelType,
 				Name:      channelName,
 				CreatedAt: createdAt,
+			}
+			if lmID.Valid {
+				lm := &LastMessage{
+					ID:             lmID.String,
+					Content:        lmContent.String,
+					CreatedAt:      lmCreated.Time,
+					HasAttachments: lmHas,
+				}
+				if lmAuthor.Valid {
+					author := lmAuthor.String
+					lm.AuthorID = &author
+				}
+				ch.LastMessage = lm
 			}
 			byID[channelID] = ch
 			order = append(order, channelID)

@@ -57,13 +57,23 @@ type Participant struct {
 	DisplayName *string `json:"display_name,omitempty"`
 }
 
+// LastMessage — превью последнего сообщения для списка диалогов.
+type LastMessage struct {
+	ID             string    `json:"id"`
+	AuthorID       *string   `json:"author_id,omitempty"`
+	Content        string    `json:"content"`
+	CreatedAt      time.Time `json:"created_at"`
+	HasAttachments bool      `json:"has_attachments"`
+}
+
 // Channel — личный канал в том виде, в каком его видит клиент.
 type Channel struct {
-	ID         string        `json:"id"`
-	Type       string        `json:"type"`
-	Name       *string       `json:"name,omitempty"`
-	CreatedAt  time.Time     `json:"created_at"`
-	Recipients []Participant `json:"recipients"`
+	ID          string        `json:"id"`
+	Type        string        `json:"type"`
+	Name        *string       `json:"name,omitempty"`
+	CreatedAt   time.Time     `json:"created_at"`
+	Recipients  []Participant `json:"recipients"`
+	LastMessage *LastMessage  `json:"last_message,omitempty"`
 }
 
 // Open возвращает личный канал с пользователем recipientID, создавая его
@@ -191,10 +201,24 @@ func toView(ch store.DMChannel) Channel {
 	}
 
 	return Channel{
-		ID:         ch.ID,
-		Type:       ch.Type,
-		Name:       ch.Name,
-		CreatedAt:  ch.CreatedAt,
-		Recipients: recipients,
+		ID:          ch.ID,
+		Type:        ch.Type,
+		Name:        ch.Name,
+		CreatedAt:   ch.CreatedAt,
+		Recipients:  recipients,
+		LastMessage: toLastMessage(ch.LastMessage),
+	}
+}
+
+func toLastMessage(lm *store.LastMessage) *LastMessage {
+	if lm == nil {
+		return nil
+	}
+	return &LastMessage{
+		ID:             lm.ID,
+		AuthorID:       lm.AuthorID,
+		Content:        lm.Content,
+		CreatedAt:      lm.CreatedAt,
+		HasAttachments: lm.HasAttachments,
 	}
 }

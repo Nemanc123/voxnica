@@ -1005,6 +1005,19 @@ func TestGroupDMFlow(t *testing.T) {
 	dave.c.mustDo("GET", "/api/v1/channels/"+groupID+"/messages",
 		nil, http.StatusOK)
 
+	// 6.1. Список диалогов отдаёт превью последнего сообщения.
+	list := bob.c.mustDo("GET", "/api/v1/dms", nil, http.StatusOK)
+	var preview map[string]any
+	for _, raw := range list["channels"].([]any) {
+		ch := raw.(map[string]any)
+		if ch["id"] == groupID {
+			preview, _ = ch["last_message"].(map[string]any)
+		}
+	}
+	if preview == nil || preview["content"] != "привет группе" {
+		t.Fatalf("превью последнего сообщения: %v", preview)
+	}
+
 	// 7. Удаление участника: он теряет доступ и больше не видит группу.
 	bob.c.mustDo("DELETE", "/api/v1/dms/"+groupID+"/recipients/"+dave.id,
 		nil, http.StatusNoContent)

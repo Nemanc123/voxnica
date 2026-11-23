@@ -114,4 +114,33 @@ void main() {
     });
     expect(named.title('me'), 'Проект');
   });
+
+  test('DmChannel парсит превью последнего сообщения', () {
+    final dm = DmChannel.fromJson({
+      'id': 'd1',
+      'type': 'dm',
+      'recipients': [
+        {'user_id': 'me', 'username': 'me'},
+        {'user_id': 'other', 'username': 'bob'},
+      ],
+      'last_message': {
+        'id': 'm1',
+        'author_id': 'other',
+        'content': 'привет',
+        'created_at': '2026-11-23T10:00:00Z',
+        'has_attachments': false,
+      },
+    });
+
+    expect(dm.lastMessage, isNotNull);
+    expect(dm.lastMessage!.preview, 'привет');
+    expect(dm.lastMessage!.authorId, 'other');
+
+    final attachmentOnly = DmLastMessage.fromJson({
+      'id': 'm2',
+      'content': '',
+      'has_attachments': true,
+    });
+    expect(attachmentOnly.preview, 'Вложение');
+  });
 }

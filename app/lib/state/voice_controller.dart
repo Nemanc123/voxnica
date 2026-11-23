@@ -170,21 +170,30 @@ class VoiceController extends ChangeNotifier {
     return out;
   }
 
-  /// Демонстрация экрана: своя или чужая.
-  VideoTrack? get screenShareTrack {
+  /// Демонстрации экрана: своя и чужие. Показываем все одновременно:
+  /// у каждого участника может быть свой показ.
+  List<VideoTile> get screenShareTiles {
+    final out = <VideoTile>[];
+
     final local = _room?.localParticipant;
     if (local != null) {
       for (final publication in local.videoTrackPublications) {
         if (publication.source == TrackSource.screenShareVideo &&
             _isLive(publication) &&
             publication.track is VideoTrack) {
-          return publication.track as VideoTrack;
+          out.add(
+            VideoTile(
+              track: publication.track as VideoTrack,
+              name: 'Вы',
+              isLocal: true,
+            ),
+          );
         }
       }
     }
 
     final participants = _room?.remoteParticipants.values;
-    if (participants == null) return null;
+    if (participants == null) return out;
 
     for (final participant in participants) {
       for (final publication in participant.videoTrackPublications) {
@@ -192,11 +201,19 @@ class VoiceController extends ChangeNotifier {
         if (publication.source == TrackSource.screenShareVideo &&
             track is VideoTrack &&
             _isLive(publication)) {
-          return track;
+          out.add(
+            VideoTile(
+              track: track as VideoTrack,
+              name: participant.name.isEmpty
+                  ? participant.identity
+                  : participant.name,
+              isLocal: false,
+            ),
+          );
         }
       }
     }
-    return null;
+    return out;
   }
 
   bool isSpeaking(String userId) => _speaking.contains(userId);
@@ -246,7 +263,10 @@ class VoiceController extends ChangeNotifier {
           }
           notifyListeners();
         })
-        ..on<TrackUnsubscribedEvent>((_) => notifyListeners());
+        ..on<TrackUnsubscribedEvent>((_) => notifyListeners())
+        // Выключение чужой камеры/экрана — это mute, а не unsubscribe.
+        ..on<TrackMutedEvent>((_) => notifyListeners())
+        ..on<TrackUnmutedEvent>((_) => notifyListeners());
 
       if (info.canSpeak) {
         await room.localParticipant?.setMicrophoneEnabled(

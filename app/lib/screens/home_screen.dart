@@ -1514,7 +1514,7 @@ class _VoicePanel extends StatelessWidget {
                     : 'голосовой канал',
               ),
               if (inThisChannel &&
-                  (voice.screenShareTrack != null ||
+                  (voice.screenShareTiles.isNotEmpty ||
                       voice.cameraTiles.isNotEmpty))
                 SizedBox(height: 240, child: _VideoStrip(voice: voice)),
               Expanded(
@@ -1759,24 +1759,28 @@ class _VideoStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final screen = voice.screenShareTrack;
-    if (screen != null) {
+    final screens = voice.screenShareTiles;
+    if (screens.isNotEmpty) {
       return ColoredBox(
         color: Colors.black,
-        child: GestureDetector(
-          onTap: () => _openFullScreen(context, screen),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              VideoTrackRenderer(screen, fit: VideoViewFit.contain),
-              const Positioned(
-                right: 8,
-                top: 8,
-                child: Icon(Icons.fullscreen, color: Colors.white70),
+        child: screens.length == 1
+            ? _ScreenShareTile(tile: screens.first, expanded: true)
+            : LayoutBuilder(
+                builder: (context, constraints) {
+                  // Две демонстрации показываем рядом, остальные — прокруткой.
+                  final width = ((constraints.maxWidth - 24) / 2)
+                      .clamp(160.0, 520.0)
+                      .toDouble();
+                  return ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.all(8),
+                    itemCount: screens.length,
+                    separatorBuilder: (_, _) => const SizedBox(width: 8),
+                    itemBuilder: (context, index) =>
+                        _ScreenShareTile(tile: screens[index], width: width),
+                  );
+                },
               ),
-            ],
-          ),
-        ),
       );
     }
 
@@ -1825,19 +1829,67 @@ class _VideoStrip extends StatelessWidget {
       ),
     );
   }
+}
 
-  void _openFullScreen(BuildContext context, VideoTrack track) {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => Scaffold(
+void _openFullScreen(BuildContext context, VideoTrack track) {
+  Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => Scaffold(
+        backgroundColor: Colors.black,
+        appBar: AppBar(
           backgroundColor: Colors.black,
-          appBar: AppBar(
-            backgroundColor: Colors.black,
-            title: const Text('Демонстрация экрана'),
-          ),
-          body: Center(child: VideoTrackRenderer(track)),
+          title: const Text('Демонстрация экрана'),
         ),
+        body: Center(child: VideoTrackRenderer(track)),
       ),
+    ),
+  );
+}
+
+class _ScreenShareTile extends StatelessWidget {
+  const _ScreenShareTile({
+    required this.tile,
+    this.width,
+    this.expanded = false,
+  });
+
+  final VideoTile tile;
+  final double? width;
+  final bool expanded;
+
+  @override
+  Widget build(BuildContext context) {
+    final content = GestureDetector(
+      onTap: () => _openFullScreen(context, tile.track),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          VideoTrackRenderer(tile.track, fit: VideoViewFit.contain),
+          Positioned(
+            left: 8,
+            bottom: 8,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.black54,
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(tile.name, style: const TextStyle(fontSize: 11)),
+            ),
+          ),
+          const Positioned(
+            right: 8,
+            top: 8,
+            child: Icon(Icons.fullscreen, color: Colors.white70),
+          ),
+        ],
+      ),
+    );
+
+    if (expanded) return SizedBox.expand(child: content);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: SizedBox(width: width, child: content),
     );
   }
 }

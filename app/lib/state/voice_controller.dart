@@ -93,13 +93,23 @@ class VoiceController extends ChangeNotifier {
   List<MediaDevice> get audioInputs => _audioInputs;
   String? get selectedMicId => _selectedMicId;
 
+  /// Трек виден, только если он не замьючен.
+  ///
+  /// `setCameraEnabled(false)` не удаляет публикацию, а мьютит её.
+  /// Без этой проверки в сетке остаётся последний кадр выключенной камеры.
+  bool _isLive(TrackPublication publication) {
+    final track = publication.track;
+    return track != null && !publication.muted && !track.muted;
+  }
+
   /// Локальная камера — для превью в сетке.
   LocalVideoTrack? get localCameraTrack {
     final participant = _room?.localParticipant;
-    if (participant == null) return null;
+    if (participant == null || !_cameraEnabled) return null;
 
     for (final publication in participant.videoTrackPublications) {
       if (publication.source == TrackSource.camera &&
+          _isLive(publication) &&
           publication.track is LocalVideoTrack) {
         return publication.track as LocalVideoTrack;
       }
@@ -116,7 +126,9 @@ class VoiceController extends ChangeNotifier {
     for (final participant in participants) {
       for (final publication in participant.videoTrackPublications) {
         final track = publication.track;
-        if (publication.source == TrackSource.camera && track != null) {
+        if (publication.source == TrackSource.camera &&
+            track != null &&
+            _isLive(publication)) {
           out.add(track);
         }
       }
@@ -139,7 +151,9 @@ class VoiceController extends ChangeNotifier {
     for (final participant in participants) {
       for (final publication in participant.videoTrackPublications) {
         final track = publication.track;
-        if (publication.source == TrackSource.camera && track != null) {
+        if (publication.source == TrackSource.camera &&
+            track != null &&
+            _isLive(publication)) {
           out.add(
             VideoTile(
               track: track,
@@ -162,6 +176,7 @@ class VoiceController extends ChangeNotifier {
     if (local != null) {
       for (final publication in local.videoTrackPublications) {
         if (publication.source == TrackSource.screenShareVideo &&
+            _isLive(publication) &&
             publication.track is VideoTrack) {
           return publication.track as VideoTrack;
         }
@@ -175,7 +190,8 @@ class VoiceController extends ChangeNotifier {
       for (final publication in participant.videoTrackPublications) {
         final track = publication.track;
         if (publication.source == TrackSource.screenShareVideo &&
-            track is VideoTrack) {
+            track is VideoTrack &&
+            _isLive(publication)) {
           return track;
         }
       }

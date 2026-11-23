@@ -359,12 +359,24 @@ class VoiceController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> toggleScreenShare() async {
+  Future<void> toggleScreenShare({String? sourceId}) async {
     final room = _room;
     if (room == null || !_canScreenShare) return;
 
     final next = !_screenSharing;
     final android = !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+
+    // На Windows/Linux/macOS native getDisplayMedia не выбирает источник
+    // сам: без sourceId он возвращает "source not found!". На Android
+    // источник выбирает MediaProjection, там sourceId не нужен.
+    if (next &&
+        lkPlatformIsDesktop() &&
+        (sourceId == null || sourceId.isEmpty)) {
+      _error = 'Выберите экран или окно для показа';
+      _screenSharing = false;
+      notifyListeners();
+      return;
+    }
 
     // Сервис поднимаем до запроса разрешения: Android 14+ проверяет его
     // в момент getMediaProjection().
@@ -373,7 +385,13 @@ class VoiceController extends ChangeNotifier {
     }
 
     try {
-      await room.localParticipant?.setScreenShareEnabled(next);
+      final options = sourceId == null || sourceId.isEmpty
+          ? null
+          : ScreenShareCaptureOptions(sourceId: sourceId, maxFrameRate: 15);
+      await room.localParticipant?.setScreenShareEnabled(
+        next,
+        screenShareCaptureOptions: options,
+      );
       _screenSharing = next;
       _error = null;
     } catch (e) {

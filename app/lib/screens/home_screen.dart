@@ -1,5 +1,6 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:livekit_client/livekit_client.dart';
 
 import '../api/models.dart';
@@ -1465,6 +1466,34 @@ class _VoicePanel extends StatelessWidget {
   final AppController controller;
   final Channel channel;
 
+  Future<void> _toggleScreenShare(BuildContext context) async {
+    final voice = controller.voice;
+    if (voice.screenSharing) {
+      await voice.toggleScreenShare();
+      return;
+    }
+
+    // На десктопе LiveKit не выбирает источник сам: показываем список
+    // экранов и окон и передаём sourceId в захват.
+    String? sourceId;
+    if (lkPlatformIsDesktop()) {
+      final source = await showDialog<DesktopCapturerSource>(
+        context: context,
+        builder: (_) => ScreenSelectDialog(
+          titleText: 'Что показать?',
+          screenTabText: 'Весь экран',
+          windowTabText: 'Окно',
+          cancelText: 'Отмена',
+          shareText: 'Показать',
+        ),
+      );
+      if (source == null) return;
+      sourceId = source.id;
+    }
+
+    await voice.toggleScreenShare(sourceId: sourceId);
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -1590,7 +1619,8 @@ class _VoicePanel extends StatelessWidget {
                                   ),
                                 if (voice.canScreenShare)
                                   OutlinedButton.icon(
-                                    onPressed: voice.toggleScreenShare,
+                                    onPressed: () =>
+                                        _toggleScreenShare(context),
                                     icon: const Icon(Icons.screen_share),
                                     label: Text(
                                       voice.screenSharing

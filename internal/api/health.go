@@ -25,6 +25,31 @@ func readiness(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
+		// Миграции применяются вручную: проверяем, что схема не отстала.
+		// Без этого сервер отвечает 200, а блокировка падает на 500 из-за
+		// отсутствующей колонки (P-30, P-45).
+		const schemaQuery = `
+			SELECT to_regclass('public.users') IS NOT NULL
+			   AND to_regclass('public.relationships') IS NOT NULL
+			   AND to_regclass('public.read_states') IS NOT NULL
+			   AND EXISTS (
+					SELECT 1 FROM information_schema.columns
+					 WHERE table_schema = 'public'
+					   AND table_name = 'relationships'
+					   AND column_name = 'blocked_prev'
+			   )`
+		var schemaOK bool
+		if err := pool.QueryRow(ctx, schemaQuery).Scan(&schemaOK); err != nil {
+			slog.Warn("readiness: schema check failed", "err", err)
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "db_unavailable"})
+			return
+		}
+		if !schemaOK {
+			slog.Error("readiness: schema is outdated, migrations are not applied")
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "schema_outdated"})
+			return
+		}
+
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 	}
 }

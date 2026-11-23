@@ -218,7 +218,9 @@ func (s *Service) Accept(ctx context.Context, actor, from string) error {
 	}
 
 	if actorUser, err := s.store.UserByID(ctx, actor); err == nil {
-		s.notify(ctx, []string{from}, "FRIEND_ACCEPT", map[string]any{
+		// И второе устройство того, кто принял: список друзей должно
+		// обновить и оно, а не только отправитель заявки.
+		s.notify(ctx, []string{from, actor}, "FRIEND_ACCEPT", map[string]any{
 			"user": userPayload(actorUser),
 		})
 	}
@@ -296,9 +298,10 @@ func (s *Service) SetBlocked(ctx context.Context, actor, target string, blocked 
 	}
 	if restored {
 		// Дружба вернулась автоматически (решение 20.11.2026) — вторая
-		// сторона должна увидеть это без перезапуска приложения.
+		// сторона должна увидеть это без перезапуска приложения. Своё второе
+		// устройство тоже: оно не знает, что блокировку сняли.
 		if actorUser, uerr := s.store.UserByID(ctx, actor); uerr == nil {
-			s.notify(ctx, []string{target}, "FRIEND_ACCEPT", map[string]any{
+			s.notify(ctx, []string{target, actor}, "FRIEND_ACCEPT", map[string]any{
 				"user": userPayload(actorUser),
 			})
 		}

@@ -384,6 +384,10 @@ func TestUnblockRestoresFriendshipSendsEvent(t *testing.T) {
 	if pub.events[1].users[0] != e.bob {
 		t.Fatalf("FRIEND_ACCEPT ушёл %v, ожидали bob", pub.events[1].users)
 	}
+	if len(pub.events[1].users) != 2 || pub.events[1].users[1] != e.alice {
+		t.Fatalf("FRIEND_ACCEPT должен уйти и второму устройству: %v",
+			pub.events[1].users)
+	}
 }
 
 func TestSearchReportsRelation(t *testing.T) {
@@ -560,6 +564,10 @@ func TestEventsGoToRightPeople(t *testing.T) {
 	}
 	if pub.events[1].users[0] != e.alice {
 		t.Fatalf("FRIEND_ACCEPT ушёл %v, ожидали alice", pub.events[1].users)
+	}
+	if len(pub.events[1].users) != 2 || pub.events[1].users[1] != e.bob {
+		t.Fatalf("FRIEND_ACCEPT должен уйти и второму устройству принявшего: %v",
+			pub.events[1].users)
 	}
 	if pub.events[2].users[0] != e.bob {
 		t.Fatalf("RELATIONSHIP_REMOVE ушёл %v, ожидали bob", pub.events[2].users)

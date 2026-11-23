@@ -60,7 +60,7 @@ func mapAuthError(w http.ResponseWriter, err error) {
 	case errors.Is(err, auth.ErrSessionInvalid):
 		writeError(w, http.StatusUnauthorized, "invalid_session", "сессия недействительна, войдите заново")
 	default:
-		slog.Error("внутренняя ошибка auth", "err", err)
+		slog.Error("auth internal error", "err", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "внутренняя ошибка")
 	}
 }

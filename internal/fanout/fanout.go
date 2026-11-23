@@ -67,7 +67,7 @@ func (p *Publisher) Publish(ctx context.Context, guildID string, event chat.Even
 
 	payload, err := json.Marshal(wireEvent{NodeID: p.nodeID, Event: event})
 	if err != nil {
-		slog.Error("fanout: кодирование события", "err", err, "type", event.Type)
+		slog.Error("fanout: encode event", "err", err, "type", event.Type)
 		return
 	}
 
@@ -77,7 +77,7 @@ func (p *Publisher) Publish(ctx context.Context, guildID string, event chat.Even
 	if err := p.rdb.Publish(pubCtx, ChannelPrefix+guildID, payload).Err(); err != nil {
 		// Redis упал — локальные клиенты событие уже получили.
 		// Теряем только другие узлы; сервер продолжает работать.
-		slog.Warn("fanout: публикация в redis не удалась", "err", err, "guild_id", guildID)
+		slog.Warn("fanout: redis publish failed", "err", err, "guild_id", guildID)
 	}
 }
 
@@ -91,13 +91,13 @@ func (p *Publisher) PublishToUsers(ctx context.Context, userIDs []string, eventT
 
 	raw, err := json.Marshal(data)
 	if err != nil {
-		slog.Error("fanout: кодирование личного события", "err", err, "type", eventType)
+		slog.Error("fanout: encode user event", "err", err, "type", eventType)
 		return
 	}
 
 	payload, err := json.Marshal(wireUserEvent{NodeID: p.nodeID, Type: eventType, Data: raw})
 	if err != nil {
-		slog.Error("fanout: кодирование личного события", "err", err, "type", eventType)
+		slog.Error("fanout: encode user event", "err", err, "type", eventType)
 		return
 	}
 
@@ -106,7 +106,7 @@ func (p *Publisher) PublishToUsers(ctx context.Context, userIDs []string, eventT
 
 	for _, userID := range userIDs {
 		if err := p.rdb.Publish(pubCtx, UserPrefix+userID, payload).Err(); err != nil {
-			slog.Warn("fanout: публикация личного события не удалась",
+			slog.Warn("fanout: user event publish failed",
 				"err", err, "user_id", userID)
 		}
 	}
@@ -127,7 +127,7 @@ func (s *Subscriber) Run(ctx context.Context) {
 	sub := s.rdb.PSubscribe(ctx, ChannelPrefix+"*", UserPrefix+"*")
 	defer func() { _ = sub.Close() }()
 
-	slog.Info("fanout: подписка на события гильдий и личные события", "node_id", s.nodeID)
+	slog.Info("fanout: subscribed to guild and user events", "node_id", s.nodeID)
 
 	for {
 		select {
@@ -141,7 +141,7 @@ func (s *Subscriber) Run(ctx context.Context) {
 			if strings.HasPrefix(msg.Channel, UserPrefix) {
 				var w wireUserEvent
 				if err := json.Unmarshal([]byte(msg.Payload), &w); err != nil {
-					slog.Warn("fanout: неразборчивое личное сообщение", "err", err)
+					slog.Warn("fanout: malformed user message", "err", err)
 					continue
 				}
 				if w.NodeID == s.nodeID {
@@ -157,7 +157,7 @@ func (s *Subscriber) Run(ctx context.Context) {
 
 			var w wireEvent
 			if err := json.Unmarshal([]byte(msg.Payload), &w); err != nil {
-				slog.Warn("fanout: неразборчивое сообщение", "err", err)
+				slog.Warn("fanout: malformed message", "err", err)
 				continue
 			}
 			if w.NodeID == s.nodeID {

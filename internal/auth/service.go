@@ -154,7 +154,7 @@ func (s *Service) Refresh(ctx context.Context, refreshToken, userAgent, ip strin
 	// Пришёл уже отозванный токен — значит его украли и используют повторно.
 	// Правильная реакция: погасить все сессии пользователя.
 	if session.RevokedAt != nil {
-		slog.Warn("повторное использование отозванного refresh-токена",
+		slog.Warn("reuse of revoked refresh token",
 			"user_id", session.UserID, "session_id", session.ID)
 		_ = s.store.RevokeAllSessions(ctx, session.UserID)
 		return Result{}, ErrSessionInvalid

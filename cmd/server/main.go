@@ -86,7 +86,7 @@ func run() error {
 	slog.Info("database connected")
 
 	if cfg.JWTSecret == "dev-secret-change-me" {
-		slog.Warn("JWT_SECRET не задан, используется значение для разработки")
+		slog.Warn("JWT_SECRET is not set, using development value")
 	}
 
 	authService := auth.NewService(store.NewWithPool(pool), cfg.JWTSecret, cfg.AccessTTL, cfg.RefreshTTL)
@@ -139,10 +139,10 @@ func run() error {
 		Bucket:    cfg.StorageBucket,
 		UseSSL:    cfg.StorageUseSSL,
 	}); err != nil {
-		slog.Warn("хранилище недоступно: вложения отключены", "err", err)
+		slog.Warn("storage unavailable: attachments disabled", "err", err)
 	} else {
 		chatService = chatService.WithStorage(st)
-		slog.Info("хранилище файлов подключено", "endpoint", cfg.StorageEndpoint)
+		slog.Info("file storage connected", "endpoint", cfg.StorageEndpoint)
 	}
 
 	messageHandlers := api.NewMessageHandlers(chatService)
@@ -150,7 +150,7 @@ func run() error {
 	gatewayHandler := gateway.NewHandler(hub, authService, guildService)
 
 	if cfg.LiveKitAPISecret == "secret" {
-		slog.Warn("используются ключи LiveKit для разработки (devkey/secret)")
+		slog.Warn("using LiveKit development keys (devkey/secret)")
 	}
 
 	voiceService := voice.NewService(

@@ -25,7 +25,7 @@ func newNodeID() string {
 func connectRedis(ctx context.Context, rawURL string) *redis.Client {
 	opts, err := redis.ParseURL(rawURL)
 	if err != nil {
-		slog.Warn("redis: разбор адреса", "err", err)
+		slog.Warn("redis: parse address", "err", err)
 		return nil
 	}
 
@@ -35,11 +35,11 @@ func connectRedis(ctx context.Context, rawURL string) *redis.Client {
 	defer cancel()
 
 	if err := client.Ping(pingCtx).Err(); err != nil {
-		slog.Warn("redis недоступен: события только внутри узла", "err", err)
+		slog.Warn("redis unavailable: events stay on this node", "err", err)
 		_ = client.Close()
 		return nil
 	}
 
-	slog.Info("redis подключён")
+	slog.Info("redis connected")
 	return client
 }

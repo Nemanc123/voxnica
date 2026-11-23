@@ -233,7 +233,7 @@ func mapChatError(w http.ResponseWriter, err error) {
 	case errors.Is(err, store.ErrChannelNotFound):
 		writeError(w, http.StatusNotFound, "not_found", "канал не найден")
 	default:
-		slog.Error("внутренняя ошибка chat", "err", err)
+		slog.Error("chat internal error", "err", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "внутренняя ошибка")
 	}
 }

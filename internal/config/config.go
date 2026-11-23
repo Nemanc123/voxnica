@@ -66,7 +66,7 @@ func parseDuration(key string, fallback time.Duration) time.Duration {
 	}
 	d, err := time.ParseDuration(raw)
 	if err != nil {
-		slog.Warn("не удалось разобрать длительность, использую значение по умолчанию", "key", key, "value", raw)
+		slog.Warn("failed to parse duration, using default", "key", key, "value", raw)
 		return fallback
 	}
 	return d
@@ -90,7 +90,7 @@ func envBool(key string, fallback bool) bool {
 	case "0", "false", "no", "off":
 		return false
 	default:
-		slog.Warn("не удалось разобрать флаг, использую значение по умолчанию",
+		slog.Warn("failed to parse bool, using default",
 			"key", key, "value", raw, "fallback", fallback)
 		return fallback
 	}

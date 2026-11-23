@@ -159,7 +159,7 @@ func (h *GuildHandlers) toDetail(r *http.Request, userID string, d guild.Detail)
 	guildPerms, err := h.svc.Permissions(r.Context(), d.Guild.ID, userID, "")
 	if err != nil {
 		// Права не критичны для отображения: клиент сможет перезапросить.
-		slog.Warn("не удалось вычислить права", "err", err)
+		slog.Warn("failed to compute permissions", "err", err)
 	}
 
 	return guildDetailResponse{
@@ -344,7 +344,7 @@ func mapGuildError(w http.ResponseWriter, err error) {
 	case errors.Is(err, store.ErrInviteExhausted):
 		writeError(w, http.StatusGone, "invite_exhausted", "приглашение больше не действует")
 	default:
-		slog.Error("внутренняя ошибка guild", "err", err)
+		slog.Error("guild internal error", "err", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "внутренняя ошибка")
 	}
 }

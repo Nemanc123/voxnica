@@ -50,7 +50,7 @@ func (c *Client) push(payload []byte) {
 	default:
 		// Клиент не успевает читать: закрываем соединение, но сессия
 		// остаётся — после переподключения события догонятся через RESUME.
-		slog.Warn("клиент не успевает читать, закрываю", "user_id", c.session.UserID)
+		slog.Warn("client cannot keep up, closing", "user_id", c.session.UserID)
 		c.close()
 	}
 }
@@ -60,7 +60,7 @@ func (c *Client) push(payload []byte) {
 func (c *Client) sendFrame(env envelope) {
 	payload, err := json.Marshal(env)
 	if err != nil {
-		slog.Error("кодирование кадра", "err", err, "op", env.Op)
+		slog.Error("encode frame", "err", err, "op", env.Op)
 		return
 	}
 	c.push(payload)
@@ -137,7 +137,7 @@ func (c *Client) readPump() {
 
 		var env envelope
 		if err := json.Unmarshal(raw, &env); err != nil {
-			slog.Debug("неразборчивый кадр", "err", err, "user_id", c.session.UserID)
+			slog.Debug("malformed frame", "err", err, "user_id", c.session.UserID)
 			continue
 		}
 
@@ -145,7 +145,7 @@ func (c *Client) readPump() {
 		case OpHeartbeat:
 			c.sendFrame(envelope{Op: OpHeartbeatAck})
 		default:
-			slog.Debug("неизвестный op", "op", env.Op, "user_id", c.session.UserID)
+			slog.Debug("unknown op", "op", env.Op, "user_id", c.session.UserID)
 		}
 	}
 }

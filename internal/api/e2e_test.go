@@ -1078,3 +1078,13 @@ func TestGroupDMFlow(t *testing.T) {
 	alice.c.mustDo("POST", "/api/v1/dms/00000000-0000-0000-0000-000000000000/recipients",
 		map[string]any{"user_id": bob.id}, http.StatusNotFound)
 }
+
+// TestHealthEndpoints проверяет, что readyz не только пингует базу, но и
+// видит применённую схему (миграции).
+func TestHealthEndpoints(t *testing.T) {
+	srv, _ := newTestServer(t, nil)
+	c := &client{t: t, base: srv.URL}
+
+	c.mustDo("GET", "/healthz", nil, http.StatusOK)
+	c.mustDo("GET", "/readyz", nil, http.StatusOK)
+}

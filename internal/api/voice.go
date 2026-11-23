@@ -145,7 +145,7 @@ func (h *VoiceHandlers) Webhook(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusUnauthorized, "invalid_signature", "подпись вебхука неверна")
 			return
 		}
-		slog.Error("вебхук LiveKit", "err", err)
+		slog.Error("LiveKit webhook", "err", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "внутренняя ошибка")
 		return
 	}
@@ -162,7 +162,7 @@ func mapVoiceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, store.ErrChannelNotFound):
 		writeError(w, http.StatusNotFound, "not_found", "канал не найден")
 	default:
-		slog.Error("внутренняя ошибка voice", "err", err)
+		slog.Error("voice internal error", "err", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "внутренняя ошибка")
 	}
 }

@@ -115,7 +115,7 @@ func (h *Handler) handleIdentify(r *http.Request, conn *websocket.Conn, raw json
 
 	guilds, err := h.guilds.ListGuilds(r.Context(), claims.Subject)
 	if err != nil {
-		slog.Error("шлюз: список серверов", "err", err, "user_id", claims.Subject)
+		slog.Error("gateway: list guilds", "err", err, "user_id", claims.Subject)
 		closeWithCode(conn, 4000, "internal error")
 		return
 	}
@@ -151,7 +151,7 @@ func (h *Handler) handleIdentify(r *http.Request, conn *websocket.Conn, raw json
 		h.announcePresence(session, "online")
 	}
 
-	slog.Info("шлюз: клиент подключился", "user_id", session.UserID, "guilds", len(guildIDs))
+	slog.Info("gateway: client connected", "user_id", session.UserID, "guilds", len(guildIDs))
 
 	go client.writePump()
 	client.readPump()
@@ -218,7 +218,7 @@ func (h *Handler) handleResume(r *http.Request, conn *websocket.Conn, raw json.R
 		h.announcePresence(session, "online")
 	}
 
-	slog.Info("шлюз: сессия восстановлена",
+	slog.Info("gateway: session resumed",
 		"user_id", session.UserID, "session_id", session.ID, "replayed", len(events))
 
 	go client.writePump()

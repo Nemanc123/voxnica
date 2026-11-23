@@ -122,3 +122,39 @@ func TestDeclineDMNotifiesCaller(t *testing.T) {
 		t.Fatalf("отклонение ушло %v, ожидали звонящего %s", event.users, e.owner)
 	}
 }
+
+func TestInviteGroupNotifiesAllOtherMembers(t *testing.T) {
+	e := newVoiceEnv(t)
+	ctx := context.Background()
+
+	group, err := e.dm.CreateGroup(ctx, e.owner, []string{e.member, e.stranger}, nil)
+	if err != nil {
+		t.Fatalf("создание группы: %v", err)
+	}
+
+	if _, err := e.service.Join(ctx, e.owner, group.ID); err != nil {
+		t.Fatalf("вход в групповой канал: %v", err)
+	}
+	if err := e.service.Invite(ctx, e.owner, group.ID); err != nil {
+		t.Fatalf("вызов группы: %v", err)
+	}
+
+	event := e.pub.lastUserEvent()
+	if event.kind != "CALL_INVITE" {
+		t.Fatalf("событие %q, ожидали CALL_INVITE", event.kind)
+	}
+	if len(event.users) != 2 {
+		t.Fatalf("вызов ушёл %v, ожидали двух участников", event.users)
+	}
+	got := make(map[string]bool, len(event.users))
+	for _, id := range event.users {
+		got[id] = true
+	}
+	if !got[e.member] || !got[e.stranger] {
+		t.Fatalf("вызов ушёл %v, ожидали %s и %s", event.users, e.member, e.stranger)
+	}
+	data, ok := event.data.(map[string]any)
+	if !ok || data["channel_id"] != group.ID || data["from_user_id"] != e.owner {
+		t.Fatalf("данные вызова: %+v", event.data)
+	}
+}

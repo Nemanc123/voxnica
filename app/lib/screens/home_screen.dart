@@ -1250,12 +1250,13 @@ class _TextChannelState extends State<_TextChannel> {
                             ),
                           ],
                         ),
-                      if (controller.dm?.isGroup != true)
-                        IconButton(
-                          tooltip: 'Позвонить',
-                          onPressed: () => controller.startDmCall(widget.channel),
-                          icon: const Icon(Icons.call, size: 20),
-                        ),
+                      IconButton(
+                        tooltip: controller.dm?.isGroup == true
+                            ? 'Позвонить группе'
+                            : 'Позвонить',
+                        onPressed: () => controller.startDmCall(widget.channel),
+                        icon: const Icon(Icons.call, size: 20),
+                      ),
                     ],
                   )
                 : null,

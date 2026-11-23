@@ -22,9 +22,14 @@ class IncomingCallCard extends StatelessWidget {
     final call = controller.incomingCall;
     if (call == null) return const SizedBox.shrink();
 
-    final initial = call.fromName.isEmpty
-        ? '?'
-        : call.fromName.substring(0, 1).toUpperCase();
+    final dm = controller.dmById(call.channelId);
+    final isGroupCall = dm?.isGroup == true;
+    final title = isGroupCall
+        ? dm!.title(controller.user?.id ?? '')
+        : call.fromName;
+    final subtitle = isGroupCall ? 'групповой звонок' : 'входящий звонок';
+
+    final initial = title.isEmpty ? '?' : title.substring(0, 1).toUpperCase();
 
     return Material(
       elevation: 10,
@@ -49,14 +54,14 @@ class IncomingCallCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        call.fromName,
+                        title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontWeight: FontWeight.w700),
                       ),
-                      const Text(
-                        'входящий звонок',
-                        style: TextStyle(fontSize: 11, color: kTextMuted),
+                      Text(
+                        subtitle,
+                        style: const TextStyle(fontSize: 11, color: kTextMuted),
                       ),
                     ],
                   ),

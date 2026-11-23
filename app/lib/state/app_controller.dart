@@ -59,6 +59,11 @@ class AppController extends ChangeNotifier {
   List<DmChannel> get dms => _dms;
   DmChannel? get dm => _dm;
 
+  /// Диалог по id канала — нужен карточке входящего звонка, чтобы
+  /// показать название группы, а не только имя звонящего.
+  DmChannel? dmById(String channelId) =>
+      _firstOrNull(dms.where((item) => item.id == channelId));
+
   /// Открыт ли «домашний» раздел личных сообщений (как в Discord).
   ///
   /// Когда true, сайдбар показывает поиск, «Друзья» и список диалогов,

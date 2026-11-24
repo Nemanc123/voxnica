@@ -117,6 +117,33 @@ class ApiClient {
     await _clearSession();
   }
 
+  /// Смена пароля. Сервер гасит все сессии, поэтому локальная тоже
+  /// очищается: приложение вернётся на экран входа.
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    await _request(
+      'POST',
+      '/auth/password',
+      body: {
+        'current_password': currentPassword,
+        'new_password': newPassword,
+      },
+    );
+    await _clearSession();
+  }
+
+  Future<List<UserSession>> sessions() async {
+    final json = await _request('GET', '/auth/sessions');
+    final raw = json?['sessions'] as List<dynamic>? ?? [];
+    return raw.cast<Map<String, dynamic>>().map(UserSession.fromJson).toList();
+  }
+
+  Future<void> revokeSession(String sessionID) async {
+    await _request('DELETE', '/auth/sessions/$sessionID');
+  }
+
   Future<List<Guild>> listGuilds() async {
     final json = await _request('GET', '/guilds');
     final raw = json?['guilds'] as List<dynamic>? ?? [];

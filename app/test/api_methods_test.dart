@@ -4,6 +4,8 @@
 // PUT, поэтому блокировка друзей падала с ArgumentError ещё до сети, и в
 // логах API не появлялось ни одного запроса.
 
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -70,6 +72,69 @@ void main() {
     expect(captured!.url.path, '/api/v1/auth/logout-all');
     expect(captured!.headers['Authorization'], 'Bearer token');
     expect(api.isAuthenticated, isFalse);
+  });
+
+  test('смена пароля очищает локальную сессию', () async {
+    http.Request? captured;
+
+    final api = await buildClient(
+      handler: (request) async {
+        captured = request;
+        return http.Response('', 204);
+      },
+    );
+
+    await api.changePassword(
+      currentPassword: 'old-password-1',
+      newPassword: 'new-password-2',
+    );
+
+    expect(captured, isNotNull);
+    expect(captured!.method, 'POST');
+    expect(captured!.url.path, '/api/v1/auth/password');
+    final body = jsonDecode(captured!.body) as Map<String, dynamic>;
+    expect(body['current_password'], 'old-password-1');
+    expect(body['new_password'], 'new-password-2');
+    expect(api.isAuthenticated, isFalse);
+  });
+
+  test('сессии читаются и завершаются', () async {
+    final calls = <http.Request>[];
+
+    final api = await buildClient(
+      handler: (request) async {
+        calls.add(request);
+        if (request.method == 'GET') {
+          return http.Response(
+            jsonEncode({
+              'sessions': [
+                {
+                  'id': 's-1',
+                  'user_agent': 'Dart/3.0 (dart:io)',
+                  'ip': '10.0.0.1',
+                  'created_at': '2026-11-23T10:00:00Z',
+                  'last_seen_at': '2026-11-23T11:00:00Z',
+                  'current': true,
+                },
+              ],
+            }),
+            200,
+          );
+        }
+        return http.Response('', 204);
+      },
+    );
+
+    final sessions = await api.sessions();
+    expect(sessions, hasLength(1));
+    expect(sessions.first.id, 's-1');
+    expect(sessions.first.ip, '10.0.0.1');
+    expect(sessions.first.current, isTrue);
+    expect(sessions.first.createdAt, isNotNull);
+
+    await api.revokeSession('s-2');
+    expect(calls.last.method, 'DELETE');
+    expect(calls.last.url.path, '/api/v1/auth/sessions/s-2');
   });
 
   test('снятие блокировки отправляется с blocked=false', () async {

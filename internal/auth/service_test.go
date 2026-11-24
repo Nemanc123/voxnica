@@ -266,3 +266,71 @@ func TestMeReturnsCurrentUser(t *testing.T) {
 		t.Fatalf("username = %q, ожидали %q", user.Username, name)
 	}
 }
+
+func TestChangePasswordRevokesSessions(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+	name := uniqueName(t)
+
+	reg := register(t, svc, name, "old-password-1")
+	if _, err := svc.Login(ctx, name, "old-password-1", "test", ""); err != nil {
+		t.Fatalf("второй вход: %v", err)
+	}
+
+	sessions, err := svc.Sessions(ctx, reg.User.ID)
+	if err != nil {
+		t.Fatalf("сессии: %v", err)
+	}
+	if len(sessions) != 2 {
+		t.Fatalf("сессий %d, ожидали 2", len(sessions))
+	}
+
+	if err := svc.ChangePassword(ctx, reg.User.ID, "wrong-password", "new-password-2"); !errors.Is(err, auth.ErrInvalidCredentials) {
+		t.Fatalf("неверный текущий пароль: %v", err)
+	}
+	if err := svc.ChangePassword(ctx, reg.User.ID, "old-password-1", "short"); !errors.Is(err, auth.ErrValidation) {
+		t.Fatalf("короткий новый пароль: %v", err)
+	}
+
+	if err := svc.ChangePassword(ctx, reg.User.ID, "old-password-1", "new-password-2"); err != nil {
+		t.Fatalf("смена пароля: %v", err)
+	}
+
+	sessions, err = svc.Sessions(ctx, reg.User.ID)
+	if err != nil {
+		t.Fatalf("сессии после смены: %v", err)
+	}
+	if len(sessions) != 0 {
+		t.Fatalf("после смены осталось сессий: %d", len(sessions))
+	}
+
+	if _, err := svc.Login(ctx, name, "old-password-1", "test", ""); !errors.Is(err, auth.ErrInvalidCredentials) {
+		t.Fatalf("старый пароль должен быть отклонён: %v", err)
+	}
+	if _, err := svc.Login(ctx, name, "new-password-2", "test", ""); err != nil {
+		t.Fatalf("новый пароль должен работать: %v", err)
+	}
+}
+
+func TestRevokeSession(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+	name := uniqueName(t)
+
+	reg := register(t, svc, name, "old-password-1")
+	if _, err := svc.Login(ctx, name, "old-password-1", "test", ""); err != nil {
+		t.Fatalf("второй вход: %v", err)
+	}
+
+	sessions, err := svc.Sessions(ctx, reg.User.ID)
+	if err != nil || len(sessions) != 2 {
+		t.Fatalf("сессии: %v, len=%d", err, len(sessions))
+	}
+
+	if err := svc.RevokeSession(ctx, reg.User.ID, sessions[0].ID); err != nil {
+		t.Fatalf("отзыв сессии: %v", err)
+	}
+	if err := svc.RevokeSession(ctx, reg.User.ID, sessions[0].ID); !errors.Is(err, auth.ErrSessionNotFound) {
+		t.Fatalf("повторный отзыв: %v", err)
+	}
+}

@@ -153,6 +153,17 @@ type Session struct {
 	RevokedAt *time.Time
 }
 
+// UserSession — активная сессия для экрана «Активные сессии».
+// Токен и его хеш наружу не отдаются.
+type UserSession struct {
+	ID         string
+	UserAgent  string
+	IP         string
+	CreatedAt  time.Time
+	LastSeenAt time.Time
+	ExpiresAt  time.Time
+}
+
 type CreateSessionParams struct {
 	UserID    string
 	TokenHash []byte
@@ -207,6 +218,92 @@ func (s *Store) RevokeAllSessions(ctx context.Context, userID string) error {
 	const query = `UPDATE user_sessions SET revoked_at = now() WHERE user_id = $1::uuid AND revoked_at IS NULL`
 	if _, err := s.db.Exec(ctx, query, userID); err != nil {
 		return fmt.Errorf("отзыв всех сессий: %w", err)
+	}
+	return nil
+}
+
+// UserSessions — активные (не отозванные и не истёкшие) сессии пользователя.
+func (s *Store) UserSessions(ctx context.Context, userID string) ([]UserSession, error) {
+	const query = `
+		SELECT id::text, COALESCE(user_agent, ''), COALESCE(host(ip), ''),
+		       created_at, last_seen_at, expires_at
+		  FROM user_sessions
+		 WHERE user_id = $1::uuid
+		   AND revoked_at IS NULL
+		   AND expires_at > now()
+		 ORDER BY last_seen_at DESC`
+
+	rows, err := s.db.Query(ctx, query, userID)
+	if err != nil {
+		return nil, fmt.Errorf("список сессий: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]UserSession, 0)
+	for rows.Next() {
+		var item UserSession
+		if err := rows.Scan(
+			&item.ID, &item.UserAgent, &item.IP,
+			&item.CreatedAt, &item.LastSeenAt, &item.ExpiresAt,
+		); err != nil {
+			return nil, fmt.Errorf("чтение сессии: %w", err)
+		}
+		out = append(out, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("чтение сессий: %w", err)
+	}
+	return out, nil
+}
+
+// RevokeUserSession отзывает только сессию, принадлежащую этому пользователю.
+// false — сессии нет или она уже отозвана.
+func (s *Store) RevokeUserSession(ctx context.Context, userID, sessionID string) (bool, error) {
+	const query = `
+		UPDATE user_sessions
+		   SET revoked_at = now()
+		 WHERE id = $1::uuid
+		   AND user_id = $2::uuid
+		   AND revoked_at IS NULL`
+
+	tag, err := s.db.Exec(ctx, query, sessionID, userID)
+	if err != nil {
+		return false, fmt.Errorf("отзыв сессии: %w", err)
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
+// ChangePasswordAndRevokeAll меняет хеш пароля и гасит все сессии в одной
+// транзакции: иначе при сбое между запросами старый пароль остался бы
+// действительным или часть сессий пережила бы смену.
+func (s *Store) ChangePasswordAndRevokeAll(ctx context.Context, userID, passwordHash string) error {
+	tx, raw, err := s.Tx(ctx)
+	if err != nil {
+		return err
+	}
+	if raw != nil {
+		defer func() { _ = raw.Rollback(context.Background()) }()
+	}
+
+	if _, err := tx.db.Exec(ctx,
+		`UPDATE users SET password_hash = $2 WHERE id = $1::uuid`,
+		userID, passwordHash,
+	); err != nil {
+		return fmt.Errorf("смена пароля: %w", err)
+	}
+
+	if _, err := tx.db.Exec(ctx,
+		`UPDATE user_sessions SET revoked_at = now()
+		  WHERE user_id = $1::uuid AND revoked_at IS NULL`,
+		userID,
+	); err != nil {
+		return fmt.Errorf("отзыв сессий после смены пароля: %w", err)
+	}
+
+	if raw != nil {
+		if err := raw.Commit(ctx); err != nil {
+			return fmt.Errorf("фиксация смены пароля: %w", err)
+		}
 	}
 	return nil
 }

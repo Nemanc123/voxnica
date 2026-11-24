@@ -184,17 +184,39 @@ class AppController extends ChangeNotifier {
 
   Future<void> logoutAll() => _signOut(allDevices: true);
 
-  Future<void> _signOut({required bool allDevices}) async {
+  /// Смена пароля гасит все сессии на сервере, поэтому на экран входа
+  /// переходим без повторного запроса logout.
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    await api.changePassword(
+      currentPassword: currentPassword,
+      newPassword: newPassword,
+    );
+    await _signOut(allDevices: false, notifyServer: false);
+  }
+
+  Future<void> revokeSession(String sessionID) => api.revokeSession(sessionID);
+
+  Future<List<UserSession>> sessions() => api.sessions();
+
+  Future<void> _signOut({
+    required bool allDevices,
+    bool notifyServer = true,
+  }) async {
     final gateway = _gateway;
     _gateway = null;
     await _eventSub?.cancel();
     await _statusSub?.cancel();
     await gateway?.dispose();
 
-    if (allDevices) {
-      await api.logoutAll();
-    } else {
-      await api.logout();
+    if (notifyServer) {
+      if (allDevices) {
+        await api.logoutAll();
+      } else {
+        await api.logout();
+      }
     }
 
     // Друзья живут в отдельном контроллере и переживают выход: без сброса

@@ -1,9 +1,25 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:voxnica/api/api_client.dart';
+import 'package:voxnica/api/session_store.dart';
 import 'package:voxnica/screens/settings_dialog.dart';
 import 'package:voxnica/state/app_controller.dart';
 import 'package:voxnica/theme.dart';
+
+AppController buildController() => AppController(
+  api: ApiClient(
+    baseUrl: 'https://example.test/api/v1',
+    store: SessionStore.memory(),
+    client: MockClient(
+      (request) async => http.Response(jsonEncode({'sessions': []}), 200),
+    ),
+  ),
+);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -16,7 +32,7 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
 
-    final controller = AppController();
+    final controller = buildController();
     addTearDown(controller.dispose);
 
     await tester.pumpWidget(
@@ -38,7 +54,11 @@ void main() {
 
     await tester.tap(find.text('Аккаунт'));
     await tester.pump();
+    await tester.pump();
     expect(find.text('Выйти на всех устройствах'), findsOneWidget);
+    expect(find.text('Смена пароля'), findsOneWidget);
+    expect(find.text('Активные сессии'), findsOneWidget);
+    expect(find.text('Активных сессий нет.'), findsOneWidget);
   });
 
   testWidgets('настройки открываются в модальном окне', (tester) async {
@@ -47,7 +67,7 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
 
-    final controller = AppController();
+    final controller = buildController();
     addTearDown(controller.dispose);
 
     await tester.pumpWidget(

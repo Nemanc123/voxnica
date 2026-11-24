@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:livekit_client/livekit_client.dart';
 
+import '../api/api_client.dart';
+import '../api/models.dart';
 import '../core/version.dart';
 import '../state/app_controller.dart';
 import '../theme.dart';
@@ -768,12 +770,152 @@ class _CameraSettingsState extends State<_CameraSettings> {
   }
 }
 
-class _AccountSettings extends StatelessWidget {
+class _AccountSettings extends StatefulWidget {
   const _AccountSettings({required this.controller});
 
   final AppController controller;
 
-  Future<void> _logoutAll(BuildContext context) async {
+  @override
+  State<_AccountSettings> createState() => _AccountSettingsState();
+}
+
+class _AccountSettingsState extends State<_AccountSettings> {
+  final _currentPassword = TextEditingController();
+  final _newPassword = TextEditingController();
+  final _repeatPassword = TextEditingController();
+
+  List<UserSession> _sessions = const [];
+  bool _loadingSessions = true;
+  String? _sessionsError;
+  String? _revokingID;
+  bool _changingPassword = false;
+  String? _passwordError;
+  int _generation = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadSessions());
+  }
+
+  @override
+  void dispose() {
+    _currentPassword.dispose();
+    _newPassword.dispose();
+    _repeatPassword.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadSessions() async {
+    final generation = ++_generation;
+    setState(() {
+      _loadingSessions = true;
+      _sessionsError = null;
+    });
+    try {
+      final items = await widget.controller.sessions();
+      if (!mounted || generation != _generation) return;
+      setState(() {
+        _sessions = items;
+        _loadingSessions = false;
+      });
+    } on ApiException catch (error) {
+      if (!mounted || generation != _generation) return;
+      setState(() {
+        _sessionsError = error.message;
+        _loadingSessions = false;
+      });
+    } catch (_) {
+      if (!mounted || generation != _generation) return;
+      setState(() {
+        _sessionsError = 'Не удалось загрузить сессии';
+        _loadingSessions = false;
+      });
+    }
+  }
+
+  Future<void> _revoke(UserSession session) async {
+    setState(() => _revokingID = session.id);
+    try {
+      await widget.controller.revokeSession(session.id);
+      if (!mounted) return;
+      await _loadSessions();
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Не удалось завершить сессию')));
+    } finally {
+      if (mounted) setState(() => _revokingID = null);
+    }
+  }
+
+  Future<void> _changePassword() async {
+    final current = _currentPassword.text;
+    final next = _newPassword.text;
+    final repeat = _repeatPassword.text;
+
+    if (current.isEmpty) {
+      setState(() => _passwordError = 'Введите текущий пароль');
+      return;
+    }
+    if (next.length < 10) {
+      setState(() => _passwordError = 'Новый пароль — не короче 10 символов');
+      return;
+    }
+    if (next != repeat) {
+      setState(() => _passwordError = 'Пароли не совпадают');
+      return;
+    }
+
+    setState(() {
+      _changingPassword = true;
+      _passwordError = null;
+    });
+    try {
+      await widget.controller.changePassword(
+        currentPassword: current,
+        newPassword: next,
+      );
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Пароль изменён'),
+          content: const Text(
+            'Все сессии завершены. Войдите с новым паролем.',
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Войти заново'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted) return;
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _passwordError = error.message;
+        _changingPassword = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _passwordError = 'Не удалось сменить пароль';
+        _changingPassword = false;
+      });
+    }
+  }
+
+  Future<void> _logoutAll() async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -795,15 +937,15 @@ class _AccountSettings extends StatelessWidget {
     );
     if (confirmed != true) return;
 
-    await controller.logoutAll();
-    if (context.mounted) {
+    await widget.controller.logoutAll();
+    if (mounted) {
       Navigator.of(context).popUntil((route) => route.isFirst);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final user = controller.user;
+    final user = widget.controller.user;
     return ListView(
       padding: const EdgeInsets.fromLTRB(24, 22, 24, 32),
       children: [
@@ -855,15 +997,147 @@ class _AccountSettings extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         _SettingsCard(
+          title: 'Смена пароля',
+          children: [
+            const Text(
+              'После смены все сессии, включая текущую, завершатся — войти нужно будет заново.',
+              style: TextStyle(fontSize: 12, color: kTextMuted),
+            ),
+            const SizedBox(height: 12),
+            _PasswordField(
+              controller: _currentPassword,
+              label: 'Текущий пароль',
+            ),
+            const SizedBox(height: 10),
+            _PasswordField(
+              controller: _newPassword,
+              label: 'Новый пароль (не короче 10 символов)',
+            ),
+            const SizedBox(height: 10),
+            _PasswordField(
+              controller: _repeatPassword,
+              label: 'Новый пароль ещё раз',
+            ),
+            if (_passwordError != null) ...[
+              const SizedBox(height: 10),
+              Text(
+                _passwordError!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ],
+            const SizedBox(height: 14),
+            FilledButton(
+              onPressed: _changingPassword ? null : _changePassword,
+              child: _changingPassword
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Сменить пароль'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        _SettingsCard(
+          title: 'Активные сессии',
+          children: [
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Устройства, с которых выполнен вход.',
+                    style: TextStyle(fontSize: 12, color: kTextMuted),
+                  ),
+                ),
+                IconButton(
+                  onPressed: _loadingSessions ? null : _loadSessions,
+                  tooltip: 'Обновить',
+                  icon: const Icon(Icons.refresh, size: 18),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            if (_loadingSessions)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (_sessionsError != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        _sessionsError!,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: _loadSessions,
+                      child: const Text('Повторить'),
+                    ),
+                  ],
+                ),
+              )
+            else if (_sessions.isEmpty)
+              const Text(
+                'Активных сессий нет.',
+                style: TextStyle(fontSize: 12, color: kTextMuted),
+              )
+            else
+              ..._sessions.map(
+                (session) => ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.devices, size: 20),
+                  title: Text(
+                    _deviceName(session.userAgent),
+                    style: const TextStyle(fontSize: 14),
+                  ),
+                  subtitle: Text(
+                    [
+                      if (session.ip.isNotEmpty) session.ip,
+                      'активность ${_relativeTime(session.lastSeenAt)}',
+                    ].join(' · '),
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  trailing: session.current
+                      ? const Chip(
+                          label: Text('Это устройство'),
+                          visualDensity: VisualDensity.compact,
+                        )
+                      : TextButton(
+                          onPressed: _revokingID == session.id
+                              ? null
+                              : () => _revoke(session),
+                          child: _revokingID == session.id
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Text('Завершить'),
+                        ),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        _SettingsCard(
           title: 'Безопасность',
           children: [
             const Text(
-              'Смена пароля, двухфакторная аутентификация и список активных сессий появятся позже.',
+              'Двухфакторная аутентификация появится позже.',
               style: TextStyle(fontSize: 12, color: kTextMuted),
             ),
             const SizedBox(height: 12),
             OutlinedButton.icon(
-              onPressed: () => _logoutAll(context),
+              onPressed: _logoutAll,
               icon: const Icon(Icons.logout, size: 18),
               label: const Text('Выйти на всех устройствах'),
             ),
@@ -872,6 +1146,44 @@ class _AccountSettings extends StatelessWidget {
       ],
     );
   }
+}
+
+class _PasswordField extends StatelessWidget {
+  const _PasswordField({required this.controller, required this.label});
+
+  final TextEditingController controller;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      obscureText: true,
+      decoration: InputDecoration(labelText: label, isDense: true),
+    );
+  }
+}
+
+String _deviceName(String userAgent) {
+  final ua = userAgent.toLowerCase();
+  if (ua.contains('android')) return 'Android';
+  if (ua.contains('iphone') || ua.contains('ipad')) return 'iOS';
+  if (ua.contains('windows')) return 'Windows';
+  if (ua.contains('mac os') || ua.contains('macintosh')) return 'macOS';
+  if (ua.contains('linux')) return 'Linux';
+  return 'Неизвестное устройство';
+}
+
+String _relativeTime(DateTime? time) {
+  if (time == null) return 'неизвестно';
+  final diff = DateTime.now().difference(time.toLocal());
+  if (diff.inMinutes < 1) return 'только что';
+  if (diff.inMinutes < 60) return '${diff.inMinutes} мин назад';
+  if (diff.inHours < 24) return '${diff.inHours} ч назад';
+  if (diff.inDays < 7) return '${diff.inDays} дн назад';
+  final local = time.toLocal();
+  return '${local.day.toString().padLeft(2, '0')}.'
+      '${local.month.toString().padLeft(2, '0')}.${local.year}';
 }
 
 class _MicTestDialog extends StatelessWidget {

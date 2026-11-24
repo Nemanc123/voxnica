@@ -1088,3 +1088,77 @@ func TestHealthEndpoints(t *testing.T) {
 	c.mustDo("GET", "/healthz", nil, http.StatusOK)
 	c.mustDo("GET", "/readyz", nil, http.StatusOK)
 }
+
+func TestHTTPPasswordAndSessions(t *testing.T) {
+	srv, _ := newTestServer(t, nil)
+
+	suffix := time.Now().UnixNano()
+	name := randomName(suffix, "p")
+	me := &client{t: t, base: srv.URL}
+
+	reg := me.mustDo("POST", "/api/v1/auth/register", map[string]any{
+		"username": name,
+		"password": "old-password-1",
+	}, http.StatusCreated)
+	me.token = reg["access_token"].(string)
+
+	// Второй вход создаёт вторую сессию.
+	second := me.mustDo("POST", "/api/v1/auth/login", map[string]any{
+		"login":    name,
+		"password": "old-password-1",
+	}, http.StatusOK)
+	secondToken := second["access_token"].(string)
+
+	list := me.mustDo("GET", "/api/v1/auth/sessions", nil, http.StatusOK)
+	items := list["sessions"].([]any)
+	if len(items) != 2 {
+		t.Fatalf("сессий %d, ожидали 2", len(items))
+	}
+
+	var current, other string
+	for _, raw := range items {
+		item := raw.(map[string]any)
+		if item["current"] == true {
+			current = item["id"].(string)
+		} else {
+			other = item["id"].(string)
+		}
+	}
+	if current == "" || other == "" {
+		t.Fatalf("не нашли текущую и другую сессию: %v", items)
+	}
+
+	me.mustDo("DELETE", "/api/v1/auth/sessions/"+other, nil, http.StatusNoContent)
+	me.mustDo("DELETE", "/api/v1/auth/sessions/"+other, nil, http.StatusNotFound)
+
+	list = me.mustDo("GET", "/api/v1/auth/sessions", nil, http.StatusOK)
+	if len(list["sessions"].([]any)) != 1 {
+		t.Fatalf("после отзыва осталось %d сессий", len(list["sessions"].([]any)))
+	}
+
+	// Отозванная сессия не должна обновлять токен.
+	old := &client{t: t, base: srv.URL, token: secondToken}
+	old.mustDo("POST", "/api/v1/auth/refresh", map[string]any{
+		"refresh_token": second["refresh_token"],
+	}, http.StatusUnauthorized)
+
+	me.mustDo("POST", "/api/v1/auth/password", map[string]any{
+		"current_password": "wrong-password",
+		"new_password":     "new-password-2",
+	}, http.StatusUnauthorized)
+
+	me.mustDo("POST", "/api/v1/auth/password", map[string]any{
+		"current_password": "old-password-1",
+		"new_password":     "new-password-2",
+	}, http.StatusNoContent)
+
+	// Смена пароля гасит и текущую сессию: refresh больше не работает.
+	me.mustDo("POST", "/api/v1/auth/refresh", map[string]any{
+		"refresh_token": second["refresh_token"],
+	}, http.StatusUnauthorized)
+
+	me.mustDo("POST", "/api/v1/auth/login", map[string]any{
+		"login":    name,
+		"password": "new-password-2",
+	}, http.StatusOK)
+}

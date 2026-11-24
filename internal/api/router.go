@@ -68,6 +68,9 @@ func NewRouter(d Deps) http.Handler {
 
 			r.Post("/auth/logout", d.Auth.Logout)
 			r.Post("/auth/logout-all", d.Auth.LogoutAll)
+			r.Post("/auth/password", d.Auth.ChangePassword)
+			r.Get("/auth/sessions", d.Auth.Sessions)
+			r.Delete("/auth/sessions/{sessionID}", d.Auth.RevokeSession)
 			r.Get("/users/@me", d.Auth.Me)
 
 			// Серверы и каналы.

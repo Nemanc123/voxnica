@@ -561,3 +561,31 @@ class UserSearchResult {
         relation: json['relation'] as String? ?? 'none',
       );
 }
+
+/// Активная сессия пользователя. Токены сервер не отдаёт.
+class UserSession {
+  const UserSession({
+    required this.id,
+    required this.userAgent,
+    required this.ip,
+    required this.createdAt,
+    required this.lastSeenAt,
+    required this.current,
+  });
+
+  final String id;
+  final String userAgent;
+  final String ip;
+  final DateTime? createdAt;
+  final DateTime? lastSeenAt;
+  final bool current;
+
+  factory UserSession.fromJson(Map<String, dynamic> json) => UserSession(
+    id: json['id'] as String,
+    userAgent: json['user_agent'] as String? ?? '',
+    ip: json['ip'] as String? ?? '',
+    createdAt: DateTime.tryParse(json['created_at'] as String? ?? ''),
+    lastSeenAt: DateTime.tryParse(json['last_seen_at'] as String? ?? ''),
+    current: json['current'] as bool? ?? false,
+  );
+}

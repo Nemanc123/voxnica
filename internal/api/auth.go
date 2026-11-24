@@ -6,20 +6,25 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
+
 	"github.com/Nemanc123/voxnica/internal/auth"
 	"github.com/Nemanc123/voxnica/internal/store"
 )
 
 type AuthHandlers struct {
-	svc     *auth.Service
-	limiter *rateLimiter
+	svc             *auth.Service
+	limiter         *rateLimiter
+	passwordLimiter *rateLimiter
 }
 
 func NewAuthHandlers(svc *auth.Service) *AuthHandlers {
 	// 5 попыток входа в минуту на IP — защита от перебора пароля.
 	return &AuthHandlers{
-		svc:     svc,
-		limiter: newRateLimiter(5, time.Minute),
+		svc:             svc,
+		limiter:         newRateLimiter(5, time.Minute),
+		passwordLimiter: newRateLimiter(5, time.Minute),
 	}
 }
 
@@ -37,6 +42,11 @@ type loginRequest struct {
 
 type refreshRequest struct {
 	RefreshToken string `json:"refresh_token"`
+}
+
+type changePasswordRequest struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
 }
 
 type userResponse struct {
@@ -161,6 +171,92 @@ func (h *AuthHandlers) LogoutAll(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.svc.LogoutAll(r.Context(), userID); err != nil {
+		mapAuthError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *AuthHandlers) ChangePassword(w http.ResponseWriter, r *http.Request) {
+	if !h.passwordLimiter.Allow(clientIP(r)) {
+		w.Header().Set("Retry-After", "60")
+		writeError(w, http.StatusTooManyRequests, "rate_limited", "слишком много попыток, попробуйте через минуту")
+		return
+	}
+
+	userID, ok := UserIDFrom(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "нет активной сессии")
+		return
+	}
+
+	var req changePasswordRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "тело запроса должно быть JSON-объектом")
+		return
+	}
+
+	if err := h.svc.ChangePassword(r.Context(), userID, req.CurrentPassword, req.NewPassword); err != nil {
+		mapAuthError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type sessionResponse struct {
+	ID         string `json:"id"`
+	UserAgent  string `json:"user_agent"`
+	IP         string `json:"ip"`
+	CreatedAt  string `json:"created_at"`
+	LastSeenAt string `json:"last_seen_at"`
+	Current    bool   `json:"current"`
+}
+
+func (h *AuthHandlers) Sessions(w http.ResponseWriter, r *http.Request) {
+	userID, ok := UserIDFrom(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "нет активной сессии")
+		return
+	}
+
+	items, err := h.svc.Sessions(r.Context(), userID)
+	if err != nil {
+		mapAuthError(w, err)
+		return
+	}
+
+	currentID, _ := SessionIDFrom(r.Context())
+	out := make([]sessionResponse, 0, len(items))
+	for _, item := range items {
+		out = append(out, sessionResponse{
+			ID:         item.ID,
+			UserAgent:  item.UserAgent,
+			IP:         item.IP,
+			CreatedAt:  item.CreatedAt.UTC().Format(time.RFC3339),
+			LastSeenAt: item.LastSeenAt.UTC().Format(time.RFC3339),
+			Current:    item.ID == currentID,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"sessions": out})
+}
+
+func (h *AuthHandlers) RevokeSession(w http.ResponseWriter, r *http.Request) {
+	userID, ok := UserIDFrom(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "нет активной сессии")
+		return
+	}
+
+	sessionID := chi.URLParam(r, "sessionID")
+	if _, err := uuid.Parse(sessionID); err != nil {
+		writeError(w, http.StatusBadRequest, "validation_error", "неверный идентификатор сессии")
+		return
+	}
+
+	if err := h.svc.RevokeSession(r.Context(), userID, sessionID); err != nil {
 		mapAuthError(w, err)
 		return
 	}

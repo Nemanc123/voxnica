@@ -16,6 +16,7 @@ var (
 	ErrValidation         = errors.New("неверные данные")
 	ErrInvalidCredentials = errors.New("неверный логин или пароль")
 	ErrSessionInvalid     = errors.New("сессия недействительна")
+	ErrSessionNotFound    = errors.New("сессия не найдена")
 	ErrUserExists         = errors.New("пользователь уже существует")
 )
 
@@ -73,11 +74,8 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (Result, error
 	if !usernameRe.MatchString(username) {
 		return Result{}, fmt.Errorf("%w: имя пользователя — 2–32 символа, только a-z, 0-9, _. и -", ErrValidation)
 	}
-	if len(password) < MinPasswordLen {
-		return Result{}, fmt.Errorf("%w: пароль короче %d символов", ErrValidation, MinPasswordLen)
-	}
-	if len(password) > maxPasswordLen {
-		return Result{}, fmt.Errorf("%w: пароль длиннее %d символов", ErrValidation, maxPasswordLen)
+	if err := validatePassword(password); err != nil {
+		return Result{}, err
 	}
 	if email != "" && (!strings.Contains(email, "@") || strings.HasPrefix(email, "@") || strings.HasSuffix(email, "@")) {
 		return Result{}, fmt.Errorf("%w: некорректная почта", ErrValidation)
@@ -185,6 +183,63 @@ func (s *Service) Logout(ctx context.Context, sessionID string) error {
 
 func (s *Service) LogoutAll(ctx context.Context, userID string) error {
 	return s.store.RevokeAllSessions(ctx, userID)
+}
+
+// ChangePassword проверяет текущий пароль, сохраняет новый и гасит все
+// сессии. После успеха клиент должен войти заново.
+func (s *Service) ChangePassword(ctx context.Context, userID, current, next string) error {
+	if err := validatePassword(next); err != nil {
+		return err
+	}
+
+	user, err := s.store.UserByID(ctx, userID)
+	if errors.Is(err, store.ErrNotFound) {
+		return ErrSessionInvalid
+	}
+	if err != nil {
+		return err
+	}
+
+	ok, err := VerifyPassword(current, user.PasswordHash)
+	if err != nil {
+		return fmt.Errorf("проверка текущего пароля: %w", err)
+	}
+	if !ok {
+		return ErrInvalidCredentials
+	}
+
+	hash, err := HashPassword(next)
+	if err != nil {
+		return err
+	}
+	return s.store.ChangePasswordAndRevokeAll(ctx, userID, hash)
+}
+
+// Sessions отдаёт активные сессии пользователя.
+func (s *Service) Sessions(ctx context.Context, userID string) ([]store.UserSession, error) {
+	return s.store.UserSessions(ctx, userID)
+}
+
+// RevokeSession завершает чужую или свою сессию по id.
+func (s *Service) RevokeSession(ctx context.Context, userID, sessionID string) error {
+	ok, err := s.store.RevokeUserSession(ctx, userID, sessionID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return ErrSessionNotFound
+	}
+	return nil
+}
+
+func validatePassword(password string) error {
+	if len(password) < MinPasswordLen {
+		return fmt.Errorf("%w: пароль короче %d символов", ErrValidation, MinPasswordLen)
+	}
+	if len(password) > maxPasswordLen {
+		return fmt.Errorf("%w: пароль длиннее %d символов", ErrValidation, maxPasswordLen)
+	}
+	return nil
 }
 
 // User отдаёт профиль по id — используется эндпоинтом /users/@me.

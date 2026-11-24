@@ -59,6 +59,8 @@ func mapAuthError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusUnauthorized, "invalid_credentials", "неверный логин или пароль")
 	case errors.Is(err, auth.ErrSessionInvalid):
 		writeError(w, http.StatusUnauthorized, "invalid_session", "сессия недействительна, войдите заново")
+	case errors.Is(err, auth.ErrSessionNotFound):
+		writeError(w, http.StatusNotFound, "not_found", "сессия не найдена")
 	default:
 		slog.Error("auth internal error", "err", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "внутренняя ошибка")

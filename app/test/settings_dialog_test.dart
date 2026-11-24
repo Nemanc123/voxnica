@@ -33,6 +33,12 @@ void main() {
     expect(find.text('Голос и видео'), findsWidgets);
     expect(find.text('Шумоподавление'), findsOneWidget);
     expect(find.text('Автоусиление (AGC)'), findsOneWidget);
+    expect(find.text('Камера'), findsOneWidget);
+    expect(find.text('Включить превью'), findsOneWidget);
+
+    await tester.tap(find.text('Аккаунт'));
+    await tester.pump();
+    expect(find.text('Выйти на всех устройствах'), findsOneWidget);
   });
 
   testWidgets('настройки открываются в модальном окне', (tester) async {

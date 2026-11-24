@@ -8,7 +8,7 @@ import '../core/version.dart';
 import '../state/app_controller.dart';
 import '../theme.dart';
 
-enum SettingsSection { voice, about }
+enum SettingsSection { voice, account, about }
 
 Future<void> openSettings(
   BuildContext context,
@@ -59,9 +59,11 @@ class _SettingsDialogState extends State<SettingsDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final content = _section == SettingsSection.voice
-        ? _VoiceSettings(controller: widget.controller)
-        : _AboutSettings(controller: widget.controller);
+    final content = switch (_section) {
+      SettingsSection.voice => _VoiceSettings(controller: widget.controller),
+      SettingsSection.account => _AccountSettings(controller: widget.controller),
+      SettingsSection.about => _AboutSettings(controller: widget.controller),
+    };
 
     if (widget.fullScreen) {
       return Scaffold(
@@ -74,23 +76,31 @@ class _SettingsDialogState extends State<SettingsDialog> {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-              child: SegmentedButton<SettingsSection>(
-                segments: const [
-                  ButtonSegment(
-                    value: SettingsSection.voice,
-                    icon: Icon(Icons.mic, size: 18),
-                    label: Text('Голос и видео'),
-                  ),
-                  ButtonSegment(
-                    value: SettingsSection.about,
-                    icon: Icon(Icons.info_outline, size: 18),
-                    label: Text('О приложении'),
-                  ),
-                ],
-                selected: {_section},
-                onSelectionChanged: (value) {
-                  setState(() => _section = value.first);
-                },
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: SegmentedButton<SettingsSection>(
+                  segments: const [
+                    ButtonSegment(
+                      value: SettingsSection.voice,
+                      icon: Icon(Icons.mic, size: 18),
+                      label: Text('Голос и видео'),
+                    ),
+                    ButtonSegment(
+                      value: SettingsSection.account,
+                      icon: Icon(Icons.person_outline, size: 18),
+                      label: Text('Аккаунт'),
+                    ),
+                    ButtonSegment(
+                      value: SettingsSection.about,
+                      icon: Icon(Icons.info_outline, size: 18),
+                      label: Text('О приложении'),
+                    ),
+                  ],
+                  selected: {_section},
+                  onSelectionChanged: (value) {
+                    setState(() => _section = value.first);
+                  },
+                ),
               ),
             ),
             const Divider(height: 1, color: kRail),
@@ -196,6 +206,12 @@ class _SettingsSidebar extends StatelessWidget {
             label: 'Голос и видео',
             selected: section == SettingsSection.voice,
             onTap: () => onSelect(SettingsSection.voice),
+          ),
+          _SettingsNavTile(
+            icon: Icons.person_outline,
+            label: 'Аккаунт',
+            selected: section == SettingsSection.account,
+            onTap: () => onSelect(SettingsSection.account),
           ),
           _SettingsNavTile(
             icon: Icons.info_outline,
@@ -434,15 +450,7 @@ class _VoiceSettingsState extends State<_VoiceSettings> {
               ],
             ),
             const SizedBox(height: 16),
-            _SettingsCard(
-              title: 'Камера',
-              children: const [
-                Text(
-                  'Выбор камеры, превью и качество появятся в следующем обновлении.',
-                  style: TextStyle(fontSize: 12, color: kTextMuted),
-                ),
-              ],
-            ),
+            _CameraSettings(controller: widget.controller),
           ],
         );
       },
@@ -525,6 +533,343 @@ class _SettingsCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _CameraSettings extends StatefulWidget {
+  const _CameraSettings({required this.controller});
+
+  final AppController controller;
+
+  @override
+  State<_CameraSettings> createState() => _CameraSettingsState();
+}
+
+class _CameraSettingsState extends State<_CameraSettings> {
+  LocalVideoTrack? _preview;
+  bool _ownsPreview = false;
+  bool _previewEnabled = false;
+  bool _loading = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_init());
+  }
+
+  Future<void> _init() async {
+    await widget.controller.voice.loadVideoDevices();
+    await _restartPreview();
+  }
+
+  Future<void> _restartPreview() async {
+    final voice = widget.controller.voice;
+    _releasePreview();
+
+    if (voice.connected) {
+      if (!mounted) return;
+      setState(() {
+        _preview = voice.localCameraTrack;
+        _loading = false;
+      });
+      return;
+    }
+
+    if (!_previewEnabled) {
+      if (!mounted) return;
+      setState(() {
+        _preview = null;
+        _loading = false;
+        _error = null;
+      });
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      final track = await LocalVideoTrack.createCameraTrack(voice.cameraOptions);
+      if (!mounted) {
+        unawaited(track.dispose());
+        return;
+      }
+      setState(() {
+        _preview = track;
+        _ownsPreview = true;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Камера недоступна: $e';
+        _loading = false;
+      });
+    }
+  }
+
+  void _releasePreview() {
+    if (_ownsPreview) {
+      unawaited(_preview?.dispose());
+    }
+    _preview = null;
+    _ownsPreview = false;
+  }
+
+  @override
+  void dispose() {
+    _releasePreview();
+    super.dispose();
+  }
+
+  Future<void> _apply(Future<void> Function() action) async {
+    await action();
+    if (mounted) await _restartPreview();
+  }
+
+  Future<void> _togglePreview() async {
+    setState(() => _previewEnabled = !_previewEnabled);
+    await _restartPreview();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final voice = widget.controller.voice;
+    return ListenableBuilder(
+      listenable: voice,
+      builder: (context, _) {
+        final devices = voice.videoInputs;
+        return _SettingsCard(
+          title: 'Камера',
+          children: [
+            Text(
+              voice.connected
+                  ? 'Настройки применятся к текущему звонку.'
+                  : 'Превью включит камеру только на время настроек. В звонке настройки применятся при включении камеры.',
+              style: const TextStyle(fontSize: 12, color: kTextMuted),
+            ),
+            const SizedBox(height: 12),
+            AspectRatio(
+              aspectRatio: 16 / 9,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: ColoredBox(
+                  color: Colors.black,
+                  child: _preview != null
+                      ? VideoTrackRenderer(
+                          _preview!,
+                          fit: VideoViewFit.cover,
+                          mirrorMode: voice.mirrorPreview
+                              ? VideoViewMirrorMode.mirror
+                              : VideoViewMirrorMode.off,
+                        )
+                      : Center(
+                          child: _loading
+                              ? const CircularProgressIndicator()
+                              : Text(
+                                  _error ??
+                                      (voice.connected
+                                          ? 'Камера выключена в звонке'
+                                          : 'Превью выключено'),
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    color: kTextMuted,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                        ),
+                ),
+              ),
+            ),
+            if (!voice.connected)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: _togglePreview,
+                  icon: Icon(
+                    _previewEnabled ? Icons.videocam_off : Icons.videocam,
+                    size: 18,
+                  ),
+                  label: Text(
+                    _previewEnabled ? 'Остановить превью' : 'Включить превью',
+                  ),
+                ),
+              ),
+            const SizedBox(height: 12),
+            if (devices.isEmpty)
+              const Text(
+                'Камеры не найдены.',
+                style: TextStyle(fontSize: 12, color: kTextMuted),
+              )
+            else
+              _DeviceDropdown(
+                label: 'Устройство',
+                devices: devices,
+                selectedId: voice.selectedCameraId,
+                onChanged: (device) => unawaited(
+                  _apply(() => voice.selectCamera(device)),
+                ),
+              ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () => unawaited(voice.loadVideoDevices()),
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('Обновить список камер'),
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text('Качество', style: TextStyle(fontSize: 12)),
+            const SizedBox(height: 4),
+            SegmentedButton<String>(
+              segments: const [
+                ButtonSegment(value: '720p', label: Text('720p')),
+                ButtonSegment(value: '1080p', label: Text('1080p')),
+              ],
+              selected: {voice.cameraResolution},
+              onSelectionChanged: (value) => unawaited(
+                _apply(() => voice.setCameraResolution(value.first)),
+              ),
+            ),
+            const SizedBox(height: 10),
+            const Text('Частота кадров', style: TextStyle(fontSize: 12)),
+            const SizedBox(height: 4),
+            SegmentedButton<int>(
+              segments: const [
+                ButtonSegment(value: 15, label: Text('15 fps')),
+                ButtonSegment(value: 30, label: Text('30 fps')),
+              ],
+              selected: {voice.cameraFps},
+              onSelectionChanged: (value) => unawaited(
+                _apply(() => voice.setCameraFps(value.first)),
+              ),
+            ),
+            const SizedBox(height: 8),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Зеркало превью'),
+              subtitle: const Text(
+                'Только для себя; другим уходит обычное изображение.',
+                style: TextStyle(fontSize: 11, color: kTextMuted),
+              ),
+              value: voice.mirrorPreview,
+              onChanged: (value) =>
+                  unawaited(voice.setMirrorPreview(value)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _AccountSettings extends StatelessWidget {
+  const _AccountSettings({required this.controller});
+
+  final AppController controller;
+
+  Future<void> _logoutAll(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Выйти на всех устройствах?'),
+        content: const Text(
+          'Все сессии, включая текущую, будут завершены. Придётся войти заново.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Выйти везде'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    await controller.logoutAll();
+    if (context.mounted) {
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final user = controller.user;
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(24, 22, 24, 32),
+      children: [
+        const Text(
+          'Аккаунт',
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 18),
+        _SettingsCard(
+          title: 'Профиль',
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 28,
+                  backgroundColor: kAccent,
+                  child: Text(
+                    user?.name.substring(0, 1).toUpperCase() ?? '?',
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        user?.name ?? 'Пользователь',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      Text(
+                        user == null ? '' : '@${user.username}',
+                        style: const TextStyle(color: kTextMuted),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            _InfoRow(label: 'ID', value: user?.id ?? '—'),
+          ],
+        ),
+        const SizedBox(height: 16),
+        _SettingsCard(
+          title: 'Безопасность',
+          children: [
+            const Text(
+              'Смена пароля, двухфакторная аутентификация и список активных сессий появятся позже.',
+              style: TextStyle(fontSize: 12, color: kTextMuted),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: () => _logoutAll(context),
+              icon: const Icon(Icons.logout, size: 18),
+              label: const Text('Выйти на всех устройствах'),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

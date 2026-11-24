@@ -59,8 +59,10 @@ class VoiceController extends ChangeNotifier {
 
   List<MediaDevice> _audioInputs = const [];
   List<MediaDevice> _audioOutputs = const [];
+  List<MediaDevice> _videoInputs = const [];
   String? _selectedMicId;
   String? _selectedOutputId;
+  String? _selectedCameraId;
 
   /// Настройки захвата звука.
   ///
@@ -76,6 +78,14 @@ class VoiceController extends ChangeNotifier {
     highPassFilter: true,
     voiceIsolation: false,
     typingNoiseDetection: false,
+  );
+
+  CameraCaptureOptions get cameraOptions => CameraCaptureOptions(
+    deviceId: _selectedCameraId ?? settings.cameraDeviceId,
+    params: settings.cameraResolution == '1080p'
+        ? VideoParametersPresets.h1080_169
+        : VideoParametersPresets.h720_169,
+    maxFrameRate: settings.cameraFps.toDouble(),
   );
 
   String? get channelId => _channelId;
@@ -96,8 +106,13 @@ class VoiceController extends ChangeNotifier {
   double get micLevel => _micLevel;
   List<MediaDevice> get audioInputs => _audioInputs;
   List<MediaDevice> get audioOutputs => _audioOutputs;
+  List<MediaDevice> get videoInputs => _videoInputs;
   String? get selectedMicId => _selectedMicId;
   String? get selectedOutputId => _selectedOutputId;
+  String? get selectedCameraId => _selectedCameraId;
+  String get cameraResolution => settings.cameraResolution;
+  int get cameraFps => settings.cameraFps;
+  bool get mirrorPreview => settings.mirrorPreview;
 
   /// Трек виден, только если он не замьючен.
   ///
@@ -240,6 +255,7 @@ class VoiceController extends ChangeNotifier {
           defaultAudioOutputOptions: AudioOutputOptions(
             deviceId: _selectedOutputId ?? settings.outputDeviceId,
           ),
+          defaultCameraCaptureOptions: cameraOptions,
           adaptiveStream: true,
           dynacast: true,
         ),
@@ -352,6 +368,25 @@ class VoiceController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> loadVideoDevices() async {
+    try {
+      _videoInputs = await Hardware.instance.videoInputs();
+    } catch (_) {
+      _videoInputs = const [];
+    }
+
+    final saved = settings.cameraDeviceId;
+    if (saved != null &&
+        _videoInputs.any((device) => device.deviceId == saved)) {
+      _selectedCameraId = saved;
+    } else if (_selectedCameraId == null ||
+        !_videoInputs.any((device) => device.deviceId == _selectedCameraId)) {
+      _selectedCameraId = Hardware.instance.selectedVideoInput?.deviceId;
+    }
+
+    notifyListeners();
+  }
+
   /// Переключить микрофон (гарнитура вместо встроенного).
   Future<void> selectMicrophone(MediaDevice device) async {
     _selectedMicId = device.deviceId;
@@ -427,6 +462,66 @@ class VoiceController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> selectCamera(MediaDevice device) async {
+    _selectedCameraId = device.deviceId;
+    settings.cameraDeviceId = device.deviceId;
+    await settings.save();
+
+    final room = _room;
+    if (room != null) {
+      try {
+        await room.setVideoInputDevice(device);
+        if (_cameraEnabled) await _restartCamera();
+        _error = null;
+      } catch (e) {
+        _error = 'Камера недоступна: $e';
+      }
+    }
+    notifyListeners();
+  }
+
+  Future<void> setCameraResolution(String value) async {
+    final next = value == '1080p' ? '1080p' : '720p';
+    if (settings.cameraResolution == next) return;
+    settings.cameraResolution = next;
+    await settings.save();
+    await _restartCamera();
+    notifyListeners();
+  }
+
+  Future<void> setCameraFps(int value) async {
+    final next = value == 15 ? 15 : 30;
+    if (settings.cameraFps == next) return;
+    settings.cameraFps = next;
+    await settings.save();
+    await _restartCamera();
+    notifyListeners();
+  }
+
+  Future<void> setMirrorPreview(bool value) async {
+    if (settings.mirrorPreview == value) return;
+    settings.mirrorPreview = value;
+    await settings.save();
+    notifyListeners();
+  }
+
+  Future<void> _restartCamera() async {
+    final room = _room;
+    if (room == null || !_cameraEnabled) return;
+
+    try {
+      await room.localParticipant?.setCameraEnabled(false);
+      await room.localParticipant?.setCameraEnabled(
+        true,
+        cameraCaptureOptions: cameraOptions,
+      );
+      _error = null;
+    } catch (e) {
+      _cameraEnabled = false;
+      _error = 'Не удалось применить настройки камеры: $e';
+    }
+  }
+
   /// Пересоздаём дорожку: LiveKit применяет настройки захвата только при
   /// публикации, на лету их не поменять.
   Future<void> _restartMicrophone() async {
@@ -494,7 +589,10 @@ class VoiceController extends ChangeNotifier {
 
     final next = !_cameraEnabled;
     try {
-      await room.localParticipant?.setCameraEnabled(next);
+      await room.localParticipant?.setCameraEnabled(
+        next,
+        cameraCaptureOptions: cameraOptions,
+      );
       _cameraEnabled = next;
       _error = null;
     } catch (e) {

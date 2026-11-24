@@ -11,6 +11,10 @@ class AppSettings {
   static const _agcKey = 'settings.auto_gain_control';
   static const _echoKey = 'settings.echo_cancellation';
   static const _volumeKey = 'settings.output_volume';
+  static const _cameraKey = 'settings.camera_device_id';
+  static const _cameraResolutionKey = 'settings.camera_resolution';
+  static const _cameraFpsKey = 'settings.camera_fps';
+  static const _mirrorKey = 'settings.camera_mirror_preview';
 
   String? micDeviceId;
   String? outputDeviceId;
@@ -18,6 +22,10 @@ class AppSettings {
   bool autoGainControl = true;
   bool echoCancellation = true;
   double outputVolume = 1.0;
+  String? cameraDeviceId;
+  String cameraResolution = '720p';
+  int cameraFps = 30;
+  bool mirrorPreview = true;
 
   Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
@@ -29,6 +37,12 @@ class AppSettings {
     outputVolume = (prefs.getDouble(_volumeKey) ?? 1.0)
         .clamp(0.0, 1.0)
         .toDouble();
+    cameraDeviceId = prefs.getString(_cameraKey);
+    cameraResolution = prefs.getString(_cameraResolutionKey) == '1080p'
+        ? '1080p'
+        : '720p';
+    cameraFps = prefs.getInt(_cameraFpsKey) == 15 ? 15 : 30;
+    mirrorPreview = prefs.getBool(_mirrorKey) ?? true;
   }
 
   Future<void> save() async {
@@ -39,6 +53,13 @@ class AppSettings {
     await prefs.setBool(_agcKey, autoGainControl);
     await prefs.setBool(_echoKey, echoCancellation);
     await prefs.setDouble(_volumeKey, outputVolume.clamp(0.0, 1.0).toDouble());
+    await _writeString(prefs, _cameraKey, cameraDeviceId);
+    await prefs.setString(
+      _cameraResolutionKey,
+      cameraResolution == '1080p' ? '1080p' : '720p',
+    );
+    await prefs.setInt(_cameraFpsKey, cameraFps == 15 ? 15 : 30);
+    await prefs.setBool(_mirrorKey, mirrorPreview);
   }
 
   Future<void> _writeString(

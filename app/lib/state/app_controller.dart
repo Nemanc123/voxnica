@@ -114,6 +114,7 @@ class AppController extends ChangeNotifier {
   Future<void> init() async {
     await settings.load();
     await voice.loadAudioDevices();
+    await voice.loadVideoDevices();
     await api.restore();
 
     if (api.isAuthenticated) {
@@ -179,14 +180,22 @@ class AppController extends ChangeNotifier {
     }
   }
 
-  Future<void> logout() async {
+  Future<void> logout() => _signOut(allDevices: false);
+
+  Future<void> logoutAll() => _signOut(allDevices: true);
+
+  Future<void> _signOut({required bool allDevices}) async {
     final gateway = _gateway;
     _gateway = null;
     await _eventSub?.cancel();
     await _statusSub?.cancel();
     await gateway?.dispose();
 
-    await api.logout();
+    if (allDevices) {
+      await api.logoutAll();
+    } else {
+      await api.logout();
+    }
 
     // Друзья живут в отдельном контроллере и переживают выход: без сброса
     // следующий аккаунт увидит чужие результаты поиска и списки (P-48).

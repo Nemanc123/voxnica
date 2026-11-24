@@ -108,6 +108,15 @@ class ApiClient {
     await _clearSession();
   }
 
+  Future<void> logoutAll() async {
+    try {
+      await _request('POST', '/auth/logout-all');
+    } catch (_) {
+      // Сеть могла умереть — локальную сессию всё равно очищаем.
+    }
+    await _clearSession();
+  }
+
   Future<List<Guild>> listGuilds() async {
     final json = await _request('GET', '/guilds');
     final raw = json?['guilds'] as List<dynamic>? ?? [];

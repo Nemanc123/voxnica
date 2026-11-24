@@ -19,6 +19,10 @@ void main() {
     expect(settings.outputVolume, 1.0);
     expect(settings.micDeviceId, isNull);
     expect(settings.outputDeviceId, isNull);
+    expect(settings.cameraDeviceId, isNull);
+    expect(settings.cameraResolution, '720p');
+    expect(settings.cameraFps, 30);
+    expect(settings.mirrorPreview, isTrue);
   });
 
   test('настройки сохраняются и загружаются', () async {
@@ -28,7 +32,11 @@ void main() {
       ..noiseSuppression = false
       ..autoGainControl = false
       ..echoCancellation = false
-      ..outputVolume = 0.4;
+      ..outputVolume = 0.4
+      ..cameraDeviceId = 'cam-1'
+      ..cameraResolution = '1080p'
+      ..cameraFps = 15
+      ..mirrorPreview = false;
     await settings.save();
 
     final loaded = AppSettings();
@@ -40,5 +48,9 @@ void main() {
     expect(loaded.autoGainControl, isFalse);
     expect(loaded.echoCancellation, isFalse);
     expect(loaded.outputVolume, 0.4);
+    expect(loaded.cameraDeviceId, 'cam-1');
+    expect(loaded.cameraResolution, '1080p');
+    expect(loaded.cameraFps, 15);
+    expect(loaded.mirrorPreview, isFalse);
   });
 }

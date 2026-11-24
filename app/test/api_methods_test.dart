@@ -53,6 +53,25 @@ void main() {
     expect(captured!.headers['Authorization'], 'Bearer token');
   });
 
+  test('выход на всех устройствах идёт на /auth/logout-all', () async {
+    http.Request? captured;
+
+    final api = await buildClient(
+      handler: (request) async {
+        captured = request;
+        return http.Response('', 204);
+      },
+    );
+
+    await api.logoutAll();
+
+    expect(captured, isNotNull);
+    expect(captured!.method, 'POST');
+    expect(captured!.url.path, '/api/v1/auth/logout-all');
+    expect(captured!.headers['Authorization'], 'Bearer token');
+    expect(api.isAuthenticated, isFalse);
+  });
+
   test('снятие блокировки отправляется с blocked=false', () async {
     http.Request? captured;
 

@@ -1149,6 +1149,11 @@ func TestHTTPPasswordAndSessions(t *testing.T) {
 
 	me.mustDo("POST", "/api/v1/auth/password", map[string]any{
 		"current_password": "old-password-1",
+		"new_password":     "old-password-1",
+	}, http.StatusBadRequest)
+
+	me.mustDo("POST", "/api/v1/auth/password", map[string]any{
+		"current_password": "old-password-1",
 		"new_password":     "new-password-2",
 	}, http.StatusNoContent)
 

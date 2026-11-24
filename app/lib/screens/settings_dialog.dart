@@ -872,6 +872,10 @@ class _AccountSettingsState extends State<_AccountSettings> {
       setState(() => _passwordError = 'Пароли не совпадают');
       return;
     }
+    if (next == current) {
+      setState(() => _passwordError = 'Новый пароль совпадает с текущим');
+      return;
+    }
 
     setState(() {
       _changingPassword = true;

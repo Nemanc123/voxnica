@@ -61,6 +61,41 @@ void main() {
     expect(find.text('Активных сессий нет.'), findsOneWidget);
   });
 
+  testWidgets('нельзя сменить пароль на тот же', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    tester.view.physicalSize = const Size(1400, 1200);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    final controller = buildController();
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildTheme(),
+        home: SettingsDialog(controller: controller, fullScreen: true),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.text('Аккаунт'));
+    await tester.pump();
+    await tester.pump();
+
+    final fields = find.byType(TextField);
+    expect(fields, findsNWidgets(3));
+    await tester.enterText(fields.at(0), 'same-password');
+    await tester.enterText(fields.at(1), 'same-password');
+    await tester.enterText(fields.at(2), 'same-password');
+
+    await tester.ensureVisible(find.text('Сменить пароль'));
+    await tester.pump();
+    await tester.tap(find.text('Сменить пароль'));
+    await tester.pump();
+
+    expect(find.text('Новый пароль совпадает с текущим'), findsOneWidget);
+  });
+
   testWidgets('настройки открываются в модальном окне', (tester) async {
     SharedPreferences.setMockInitialValues({});
     tester.view.physicalSize = const Size(1400, 900);

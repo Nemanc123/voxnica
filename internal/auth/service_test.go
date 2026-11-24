@@ -291,6 +291,17 @@ func TestChangePasswordRevokesSessions(t *testing.T) {
 	if err := svc.ChangePassword(ctx, reg.User.ID, "old-password-1", "short"); !errors.Is(err, auth.ErrValidation) {
 		t.Fatalf("короткий новый пароль: %v", err)
 	}
+	if err := svc.ChangePassword(ctx, reg.User.ID, "old-password-1", "old-password-1"); !errors.Is(err, auth.ErrValidation) {
+		t.Fatalf("новый пароль совпадает с текущим: %v", err)
+	}
+
+	sessions, err = svc.Sessions(ctx, reg.User.ID)
+	if err != nil {
+		t.Fatalf("сессии после отклонённых попыток: %v", err)
+	}
+	if len(sessions) != 2 {
+		t.Fatalf("отклонённые попытки погасили сессии: %d", len(sessions))
+	}
 
 	if err := svc.ChangePassword(ctx, reg.User.ID, "old-password-1", "new-password-2"); err != nil {
 		t.Fatalf("смена пароля: %v", err)

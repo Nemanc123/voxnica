@@ -207,6 +207,9 @@ func (s *Service) ChangePassword(ctx context.Context, userID, current, next stri
 	if !ok {
 		return ErrInvalidCredentials
 	}
+	if next == current {
+		return fmt.Errorf("%w: новый пароль должен отличаться от текущего", ErrValidation)
+	}
 
 	hash, err := HashPassword(next)
 	if err != nil {

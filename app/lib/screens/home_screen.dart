@@ -12,6 +12,7 @@ import '../theme.dart';
 import '../widgets/invite_dialog.dart';
 import 'channel_screen.dart';
 import 'friends_screen.dart';
+import 'settings_dialog.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key, required this.controller});
@@ -702,104 +703,6 @@ class _StartChatDialogState extends State<_StartChatDialog> {
   }
 }
 
-/// Настройки микрофона: выбор устройства, уровень, обработка голоса.
-class _MicSettingsDialog extends StatelessWidget {
-  const _MicSettingsDialog({required this.voice});
-
-  final VoiceController voice;
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Микрофон'),
-      content: SizedBox(
-        width: 380,
-        child: ListenableBuilder(
-          listenable: voice,
-          builder: (context, _) {
-            final inputs = voice.audioInputs;
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Уровень микрофона',
-                  style: TextStyle(fontSize: 12, color: kTextMuted),
-                ),
-                const SizedBox(height: 6),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: LinearProgressIndicator(
-                    value: voice.micLevel.clamp(0.0, 1.0),
-                    minHeight: 8,
-                    backgroundColor: kRail,
-                    color: voice.micLevel > 0.02 ? kOnline : kTextMuted,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
-                  initialValue:
-                      inputs.any((d) => d.deviceId == voice.selectedMicId)
-                      ? voice.selectedMicId
-                      : null,
-                  decoration: const InputDecoration(
-                    labelText: 'Устройство ввода',
-                  ),
-                  items: [
-                    for (final device in inputs)
-                      DropdownMenuItem(
-                        value: device.deviceId,
-                        child: Text(
-                          device.label.isEmpty
-                              ? 'Микрофон ${device.deviceId}'
-                              : device.label,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                  ],
-                  onChanged: (id) {
-                    if (id == null) return;
-                    for (final device in inputs) {
-                      if (device.deviceId == id) {
-                        voice.selectMicrophone(device);
-                        break;
-                      }
-                    }
-                  },
-                ),
-                const SizedBox(height: 4),
-                TextButton.icon(
-                  onPressed: voice.loadAudioInputs,
-                  icon: const Icon(Icons.refresh, size: 18),
-                  label: const Text('Обновить список устройств'),
-                ),
-                const SizedBox(height: 8),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Обработка голоса'),
-                  subtitle: const Text(
-                    'Шумоподавление и выравнивание громкости. Выключите, '
-                    'если голос звучит «ватно» или металлически.',
-                    style: TextStyle(fontSize: 11, color: kTextMuted),
-                  ),
-                  value: voice.audioProcessing,
-                  onChanged: (_) => voice.toggleAudioProcessing(),
-                ),
-              ],
-            );
-          },
-        ),
-      ),
-      actions: [
-        FilledButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Готово'),
-        ),
-      ],
-    );
-  }
-}
-
 class _GroupLabel extends StatelessWidget {
   const _GroupLabel(this.text);
 
@@ -1025,6 +928,11 @@ class _UserFooter extends StatelessWidget {
                 ),
               ],
             ),
+          ),
+          IconButton(
+            tooltip: 'Настройки',
+            onPressed: () => openSettings(context, controller),
+            icon: const Icon(Icons.settings, size: 18),
           ),
           IconButton(
             tooltip: 'Выйти',
@@ -1647,10 +1555,10 @@ class _VoicePanel extends StatelessWidget {
                                   label: const Text('Выйти'),
                                 ),
                                 OutlinedButton.icon(
-                                  onPressed: () => showDialog<void>(
-                                    context: context,
-                                    builder: (_) =>
-                                        _MicSettingsDialog(voice: voice),
+                                  onPressed: () => openSettings(
+                                    context,
+                                    controller,
+                                    section: SettingsSection.voice,
                                   ),
                                   icon: const Icon(Icons.settings_voice),
                                   label: const Text('Микрофон'),

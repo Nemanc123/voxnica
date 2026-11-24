@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../api/api_client.dart';
 import '../api/models.dart';
 import '../gateway/gateway_client.dart';
+import 'app_settings.dart';
 import 'friends_controller.dart';
 import 'voice_controller.dart';
 
@@ -15,12 +16,15 @@ enum AppStage { loading, loggedOut, ready }
 /// Один ChangeNotifier на всё приложение. Для MVP этого достаточно:
 /// меньше движущихся частей, чем у провайдеров и кодогенерации.
 class AppController extends ChangeNotifier {
-  AppController({ApiClient? api}) : api = api ?? ApiClient() {
-    voice = VoiceController(this.api);
+  AppController({ApiClient? api, AppSettings? settings})
+    : api = api ?? ApiClient(),
+      settings = settings ?? AppSettings() {
+    voice = VoiceController(this.api, this.settings);
     friends = FriendsController(this.api);
   }
 
   final ApiClient api;
+  final AppSettings settings;
   late final VoiceController voice;
   late final FriendsController friends;
 
@@ -108,6 +112,8 @@ class AppController extends ChangeNotifier {
   List<Channel> get voiceChannels => _channels.where((c) => c.isVoice).toList();
 
   Future<void> init() async {
+    await settings.load();
+    await voice.loadAudioDevices();
     await api.restore();
 
     if (api.isAuthenticated) {

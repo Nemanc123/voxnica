@@ -2,10 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart' show Helper;
 import 'package:livekit_client/livekit_client.dart';
 
 import '../api/api_client.dart';
 import '../api/models.dart';
+import 'app_settings.dart';
 
 /// Состояние голосового подключения.
 ///
@@ -27,7 +29,7 @@ class VideoTile {
 }
 
 class VoiceController extends ChangeNotifier {
-  VoiceController(this.api);
+  VoiceController(this.api, this.settings);
 
   /// Канал к MainActivity: foreground service, без которого Android 14+
   /// не разрешает захват экрана.
@@ -36,6 +38,7 @@ class VoiceController extends ChangeNotifier {
   );
 
   final ApiClient api;
+  final AppSettings settings;
 
   Room? _room;
   EventsListener<RoomEvent>? _listener;
@@ -51,15 +54,13 @@ class VoiceController extends ChangeNotifier {
   bool _canScreenShare = false;
   String? _error;
 
-  /// Обработка голоса (шумоподавление + АРУ). Можно выключить для сравнения:
-  /// агрессивная обработка делает голос «ватным» и «металлическим».
-  bool _audioProcessing = true;
-
   /// Уровень своего микрофона 0..1 — для индикатора «вас слышно».
   double _micLevel = 0;
 
   List<MediaDevice> _audioInputs = const [];
+  List<MediaDevice> _audioOutputs = const [];
   String? _selectedMicId;
+  String? _selectedOutputId;
 
   /// Настройки захвата звука.
   ///
@@ -68,10 +69,10 @@ class VoiceController extends ChangeNotifier {
   /// эмуляторе дают металлический призвук; highPassFilter наоборот
   /// полезен — убирает гул стола и вентилятора.
   AudioCaptureOptions get _captureOptions => AudioCaptureOptions(
-    deviceId: _selectedMicId,
-    echoCancellation: true,
-    noiseSuppression: _audioProcessing,
-    autoGainControl: _audioProcessing,
+    deviceId: _selectedMicId ?? settings.micDeviceId,
+    echoCancellation: settings.echoCancellation,
+    noiseSuppression: settings.noiseSuppression,
+    autoGainControl: settings.autoGainControl,
     highPassFilter: true,
     voiceIsolation: false,
     typingNoiseDetection: false,
@@ -88,10 +89,15 @@ class VoiceController extends ChangeNotifier {
   bool get canScreenShare => _canScreenShare;
   bool get connected => _room != null;
   String? get error => _error;
-  bool get audioProcessing => _audioProcessing;
+  bool get noiseSuppression => settings.noiseSuppression;
+  bool get autoGainControl => settings.autoGainControl;
+  bool get echoCancellation => settings.echoCancellation;
+  double get outputVolume => settings.outputVolume;
   double get micLevel => _micLevel;
   List<MediaDevice> get audioInputs => _audioInputs;
+  List<MediaDevice> get audioOutputs => _audioOutputs;
   String? get selectedMicId => _selectedMicId;
+  String? get selectedOutputId => _selectedOutputId;
 
   /// Трек виден, только если он не замьючен.
   ///
@@ -231,6 +237,9 @@ class VoiceController extends ChangeNotifier {
       final room = Room(
         roomOptions: RoomOptions(
           defaultAudioCaptureOptions: _captureOptions,
+          defaultAudioOutputOptions: AudioOutputOptions(
+            deviceId: _selectedOutputId ?? settings.outputDeviceId,
+          ),
           adaptiveStream: true,
           dynacast: true,
         ),
@@ -258,8 +267,12 @@ class VoiceController extends ChangeNotifier {
         })
         ..on<TrackSubscribedEvent>((event) async {
           // Пока звук выключен, новые треки тоже не должны играть.
-          if (_deafened && event.track is RemoteAudioTrack) {
-            await event.track.stop();
+          if (event.track is RemoteAudioTrack) {
+            if (_deafened) {
+              await event.track.stop();
+            } else {
+              await _applyTrackVolume(event.track as RemoteAudioTrack);
+            }
           }
           notifyListeners();
         })
@@ -274,9 +287,10 @@ class VoiceController extends ChangeNotifier {
           audioCaptureOptions: _captureOptions,
         );
         _micEnabled = true;
-        await loadAudioInputs();
+        await loadAudioDevices();
       }
 
+      await _applyOutputVolume();
       await refreshParticipants();
     } catch (e) {
       _error = 'Не удалось подключиться: $e';
@@ -304,20 +318,46 @@ class VoiceController extends ChangeNotifier {
     }
   }
 
-  /// Список микрофонов устройства. Заполняется при входе в канал.
-  Future<void> loadAudioInputs() async {
+  /// Список устройств ввода и вывода. Заполняется при старте и входе в канал.
+  Future<void> loadAudioDevices() async {
     try {
       _audioInputs = await Hardware.instance.audioInputs();
-      _selectedMicId ??= Hardware.instance.selectedAudioInput?.deviceId;
     } catch (_) {
       _audioInputs = const [];
     }
+    try {
+      _audioOutputs = await Hardware.instance.audioOutputs();
+    } catch (_) {
+      _audioOutputs = const [];
+    }
+
+    final savedMic = settings.micDeviceId;
+    if (savedMic != null &&
+        _audioInputs.any((device) => device.deviceId == savedMic)) {
+      _selectedMicId = savedMic;
+    } else if (_selectedMicId == null ||
+        !_audioInputs.any((device) => device.deviceId == _selectedMicId)) {
+      _selectedMicId = Hardware.instance.selectedAudioInput?.deviceId;
+    }
+
+    final savedOutput = settings.outputDeviceId;
+    if (savedOutput != null &&
+        _audioOutputs.any((device) => device.deviceId == savedOutput)) {
+      _selectedOutputId = savedOutput;
+    } else if (_selectedOutputId == null ||
+        !_audioOutputs.any((device) => device.deviceId == _selectedOutputId)) {
+      _selectedOutputId = Hardware.instance.selectedAudioOutput?.deviceId;
+    }
+
     notifyListeners();
   }
 
   /// Переключить микрофон (гарнитура вместо встроенного).
   Future<void> selectMicrophone(MediaDevice device) async {
     _selectedMicId = device.deviceId;
+    settings.micDeviceId = device.deviceId;
+    await settings.save();
+
     final room = _room;
     if (room != null) {
       try {
@@ -336,27 +376,95 @@ class VoiceController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Включить или выключить обработку голоса.
-  ///
-  /// Пересоздаём дорожку: LiveKit применяет настройки захвата только при
-  /// публикации, на лету их не поменять.
-  Future<void> toggleAudioProcessing() async {
-    _audioProcessing = !_audioProcessing;
+  /// Переключить устройство вывода.
+  Future<void> selectAudioOutput(MediaDevice device) async {
+    _selectedOutputId = device.deviceId;
+    settings.outputDeviceId = device.deviceId;
+    await settings.save();
 
     final room = _room;
-    if (room != null && _micEnabled) {
+    if (room != null) {
       try {
-        await room.localParticipant?.setMicrophoneEnabled(false);
-        await room.localParticipant?.setMicrophoneEnabled(
-          true,
-          audioCaptureOptions: _captureOptions,
-        );
+        await room.setAudioOutputDevice(device);
+        _error = null;
       } catch (e) {
-        _error = 'Не удалось применить настройки: $e';
+        _error = 'Устройство вывода недоступно: $e';
       }
     }
-
     notifyListeners();
+  }
+
+  Future<void> setNoiseSuppression(bool value) async {
+    if (settings.noiseSuppression == value) return;
+    settings.noiseSuppression = value;
+    await settings.save();
+    await _restartMicrophone();
+    notifyListeners();
+  }
+
+  Future<void> setAutoGainControl(bool value) async {
+    if (settings.autoGainControl == value) return;
+    settings.autoGainControl = value;
+    await settings.save();
+    await _restartMicrophone();
+    notifyListeners();
+  }
+
+  Future<void> setEchoCancellation(bool value) async {
+    if (settings.echoCancellation == value) return;
+    settings.echoCancellation = value;
+    await settings.save();
+    await _restartMicrophone();
+    notifyListeners();
+  }
+
+  Future<void> setOutputVolume(double value) async {
+    final next = value.clamp(0.0, 1.0).toDouble();
+    if ((settings.outputVolume - next).abs() < 0.001) return;
+    settings.outputVolume = next;
+    await settings.save();
+    await _applyOutputVolume();
+    notifyListeners();
+  }
+
+  /// Пересоздаём дорожку: LiveKit применяет настройки захвата только при
+  /// публикации, на лету их не поменять.
+  Future<void> _restartMicrophone() async {
+    final room = _room;
+    if (room == null || !_micEnabled) return;
+
+    try {
+      await room.localParticipant?.setMicrophoneEnabled(false);
+      await room.localParticipant?.setMicrophoneEnabled(
+        true,
+        audioCaptureOptions: _captureOptions,
+      );
+      _error = null;
+    } catch (e) {
+      _error = 'Не удалось применить настройки микрофона: $e';
+    }
+  }
+
+  Future<void> _applyOutputVolume() async {
+    final room = _room;
+    if (room == null) return;
+
+    for (final participant in room.remoteParticipants.values) {
+      for (final publication in participant.audioTrackPublications) {
+        final track = publication.track;
+        if (track is RemoteAudioTrack) {
+          await _applyTrackVolume(track);
+        }
+      }
+    }
+  }
+
+  Future<void> _applyTrackVolume(RemoteAudioTrack track) async {
+    try {
+      await Helper.setVolume(settings.outputVolume, track.mediaStreamTrack);
+    } catch (_) {
+      // Громкость — не критично для соединения.
+    }
   }
 
   Future<void> toggleMicrophone() async {
@@ -468,6 +576,7 @@ class VoiceController extends ChangeNotifier {
         if (track is RemoteAudioTrack) {
           if (enabled) {
             await track.start();
+            await _applyTrackVolume(track);
           } else {
             await track.stop();
           }

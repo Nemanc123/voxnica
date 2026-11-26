@@ -113,22 +113,29 @@ class AppController extends ChangeNotifier {
 
   Future<void> init() async {
     await settings.load();
-    await voice.loadAudioDevices();
-    await voice.loadVideoDevices();
+    // Устройства не должны задерживать показ интерфейса: перечисление
+    // камер на некоторых системах занимает секунды.
+    unawaited(voice.loadAudioDevices());
+    unawaited(voice.loadVideoDevices());
     await api.restore();
 
     if (api.isAuthenticated) {
       _user = api.user;
       _stage = AppStage.ready;
-      await _loadGuilds();
-      await _loadDms();
+      _busy = false;
+      notifyListeners();
+
+      // Данные догружаем в фоне: при недоступном сервере окно всё равно
+      // должно открыться, а не висеть на спиннере.
+      unawaited(_loadGuilds());
+      unawaited(_loadDms());
       friends.reset();
       unawaited(friends.load());
       _startGateway();
-    } else {
-      _stage = AppStage.loggedOut;
+      return;
     }
 
+    _stage = AppStage.loggedOut;
     _busy = false;
     notifyListeners();
   }
@@ -160,11 +167,16 @@ class AppController extends ChangeNotifier {
       final session = await action();
       _user = session.user;
       _stage = AppStage.ready;
+      _busy = false;
       // Пустая выдача поиска: после прошлого аккаунта там могли остаться
       // чужие строки (P-48).
       friends.reset();
-      await _loadGuilds();
-      await _loadDms();
+      notifyListeners();
+
+      // Списки грузим после показа домашнего экрана: сеть не должна
+      // задерживать вход.
+      unawaited(_loadGuilds());
+      unawaited(_loadDms());
       unawaited(friends.load());
       _startGateway();
       return true;

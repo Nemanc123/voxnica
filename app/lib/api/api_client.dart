@@ -27,14 +27,19 @@ class ApiException implements Exception {
 /// через refresh и повторить запрос. Параллельные запросы ждут один refresh,
 /// а не запускают пять.
 class ApiClient {
-  ApiClient({String? baseUrl, http.Client? client, SessionStore? store})
-    : baseUrl = (baseUrl ?? apiBaseUrl).replaceFirst(RegExp(r'/$'), ''),
-      _http = client ?? http.Client(),
-      _store = store ?? SessionStore();
+  ApiClient({
+    String? baseUrl,
+    http.Client? client,
+    SessionStore? store,
+    this.requestTimeout = const Duration(seconds: 15),
+  }) : baseUrl = (baseUrl ?? apiBaseUrl).replaceFirst(RegExp(r'/$'), ''),
+       _http = client ?? http.Client(),
+       _store = store ?? SessionStore();
 
   final String baseUrl;
   final http.Client _http;
   final SessionStore _store;
+  final Duration requestTimeout;
 
   AuthSession? _session;
   Future<bool>? _refreshing;
@@ -438,22 +443,34 @@ class ApiClient {
     late http.Response response;
     final payload = body == null ? null : jsonEncode(body);
 
-    switch (method) {
-      case 'GET':
-        response = await _http.get(uri, headers: headers);
-      case 'POST':
-        response = await _http.post(uri, headers: headers, body: payload);
-      case 'PATCH':
-        response = await _http.patch(uri, headers: headers, body: payload);
-      // PUT нужен блокировке друзей: PUT /relationships/{id}/block.
-      // Без него запрос падал в ArgumentError ещё до сети — блокировка
-      // не отправлялась вовсе (нашлось при живом тесте 19.11.2026).
-      case 'PUT':
-        response = await _http.put(uri, headers: headers, body: payload);
-      case 'DELETE':
-        response = await _http.delete(uri, headers: headers);
-      default:
-        throw ArgumentError('Неизвестный метод $method');
+    Future<http.Response> send() {
+      switch (method) {
+        case 'GET':
+          return _http.get(uri, headers: headers);
+        case 'POST':
+          return _http.post(uri, headers: headers, body: payload);
+        case 'PATCH':
+          return _http.patch(uri, headers: headers, body: payload);
+        // PUT нужен блокировке друзей: PUT /relationships/{id}/block.
+        // Без него запрос падал в ArgumentError ещё до сети — блокировка
+        // не отправлялась вовсе (нашлось при живом тесте 19.11.2026).
+        case 'PUT':
+          return _http.put(uri, headers: headers, body: payload);
+        case 'DELETE':
+          return _http.delete(uri, headers: headers);
+        default:
+          throw ArgumentError('Неизвестный метод $method');
+      }
+    }
+
+    try {
+      response = await send().timeout(requestTimeout);
+    } on TimeoutException {
+      throw const ApiException(
+        0,
+        'timeout',
+        'Сервер не ответил вовремя. Проверьте соединение.',
+      );
     }
 
     if (response.statusCode == 401 &&

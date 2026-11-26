@@ -4,6 +4,7 @@
 // PUT, поэтому блокировка друзей падала с ArgumentError ещё до сети, и в
 // логах API не появлялось ни одного запроса.
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -16,6 +17,7 @@ import 'package:voxnica/api/session_store.dart';
 
 Future<ApiClient> buildClient({
   required Future<http.Response> Function(http.Request) handler,
+  Duration requestTimeout = const Duration(seconds: 15),
 }) async {
   final store = SessionStore.memory();
   await store.save(
@@ -30,6 +32,7 @@ Future<ApiClient> buildClient({
     baseUrl: 'https://example.test/api/v1',
     client: MockClient(handler),
     store: store,
+    requestTimeout: requestTimeout,
   );
   await client.restore();
   return client;
@@ -72,6 +75,20 @@ void main() {
     expect(captured!.url.path, '/api/v1/auth/logout-all');
     expect(captured!.headers['Authorization'], 'Bearer token');
     expect(api.isAuthenticated, isFalse);
+  });
+
+  test('запрос не висит вечно при молчащем сервере', () async {
+    final api = await buildClient(
+      requestTimeout: const Duration(milliseconds: 50),
+      handler: (_) => Completer<http.Response>().future,
+    );
+
+    await expectLater(
+      api.listGuilds(),
+      throwsA(
+        isA<ApiException>().having((error) => error.code, 'code', 'timeout'),
+      ),
+    );
   });
 
   test('смена пароля очищает локальную сессию', () async {
